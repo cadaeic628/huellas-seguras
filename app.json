@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Huellas Seguras",
+    "slug": "huellas-seguras",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#2A9D8F"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2A9D8F"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Huellas Seguras necesita acceso a la cámara para que puedas reportar animales en la calle.",
+          "photosPermission": "Huellas Seguras necesita acceso a tus fotos para que puedas adjuntar imágenes al reporte."
+        }
+      ]
+    ]
+  }
+}
