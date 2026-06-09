@@ -39,11 +39,24 @@ const ghost = {
   border: '1px solid rgba(255,255,255,0.4)',
 };
 
-export default function WebCamera({ visible, onCapture, onClose }) {
+export default function WebCamera({
+  visible,
+  onCapture,
+  onClose,
+  initialFacing = 'back',
+}) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
+  const [facing, setFacing] = useState(
+    initialFacing === 'front' ? 'user' : 'environment'
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    setFacing(initialFacing === 'front' ? 'user' : 'environment');
+  }, [visible, initialFacing]);
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -60,7 +73,7 @@ export default function WebCamera({ visible, onCapture, onClose }) {
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: { facingMode: facing },
           audio: false,
         });
         if (cancelled) {
@@ -99,7 +112,11 @@ export default function WebCamera({ visible, onCapture, onClose }) {
       }
       setReady(false);
     };
-  }, [visible]);
+  }, [visible, facing]);
+
+  function toggleFacing() {
+    setFacing((f) => (f === 'user' ? 'environment' : 'user'));
+  }
 
   function capture() {
     const video = videoRef.current;
@@ -159,6 +176,9 @@ export default function WebCamera({ visible, onCapture, onClose }) {
           >
             <button onClick={onClose} style={ghost}>
               Cancelar
+            </button>
+            <button onClick={toggleFacing} style={ghost}>
+              🔄 {facing === 'user' ? 'Frontal' : 'Trasera'}
             </button>
             <button
               onClick={capture}

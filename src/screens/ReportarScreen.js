@@ -83,6 +83,7 @@ export default function ReportarScreen() {
   const [matches, setMatches] = useState([]); // [{animal, similarity, distance}]
   const [catalogoListo, setCatalogoListo] = useState(false);
   const [webCamVisible, setWebCamVisible] = useState(false);
+  const [tipoCamara, setTipoCamara] = useState('back'); // 'back' | 'front'
 
   // Indexamos el catálogo en background una sola vez.
   const indexadoIniciado = useRef(false);
@@ -151,6 +152,10 @@ export default function ReportarScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.7,
         allowsEditing: false,
+        cameraType:
+          tipoCamara === 'front'
+            ? ImagePicker.CameraType.front
+            : ImagePicker.CameraType.back,
       });
       if (result.canceled) return;
       const asset = result.assets?.[0];
@@ -246,6 +251,50 @@ export default function ReportarScreen() {
             Toma una foto del animal que viste. Compararemos la imagen con
             nuestro catálogo usando un algoritmo de parecido visual.
           </Text>
+          <View style={styles.camaraSelector}>
+            <TouchableOpacity
+              style={[
+                styles.camaraOption,
+                tipoCamara === 'back' && styles.camaraOptionActiva,
+              ]}
+              onPress={() => setTipoCamara('back')}
+            >
+              <Ionicons
+                name="camera-reverse-outline"
+                size={16}
+                color={tipoCamara === 'back' ? COLORS.white : COLORS.primary}
+              />
+              <Text
+                style={[
+                  styles.camaraOptionText,
+                  tipoCamara === 'back' && styles.camaraOptionTextActiva,
+                ]}
+              >
+                Trasera
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.camaraOption,
+                tipoCamara === 'front' && styles.camaraOptionActiva,
+              ]}
+              onPress={() => setTipoCamara('front')}
+            >
+              <Ionicons
+                name="person-outline"
+                size={16}
+                color={tipoCamara === 'front' ? COLORS.white : COLORS.primary}
+              />
+              <Text
+                style={[
+                  styles.camaraOptionText,
+                  tipoCamara === 'front' && styles.camaraOptionTextActiva,
+                ]}
+              >
+                Frontal
+              </Text>
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity style={styles.uploadButton} onPress={abrirCamara}>
             <Ionicons name="camera" size={20} color={COLORS.white} />
             <Text style={styles.uploadButtonText}>Abrir cámara</Text>
@@ -416,6 +465,7 @@ export default function ReportarScreen() {
     </ScrollView>
     <WebCamera
       visible={webCamVisible}
+      initialFacing={tipoCamara}
       onCapture={handleWebCapture}
       onClose={() => setWebCamVisible(false)}
     />
@@ -468,6 +518,34 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
     fontSize: 14,
+  },
+  camaraSelector: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: 25,
+    padding: 4,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  camaraOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  camaraOptionActiva: {
+    backgroundColor: COLORS.primary,
+  },
+  camaraOptionText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    marginLeft: 5,
+    fontSize: 12,
+  },
+  camaraOptionTextActiva: {
+    color: COLORS.white,
   },
   secondaryButton: {
     marginTop: 10,
