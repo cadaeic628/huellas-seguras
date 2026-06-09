@@ -1,14 +1,33 @@
-an# Huellas Seguras 🐾
+# Huellas Seguras 🐾
 
-App móvil de demostración para la plataforma ciudadana de seguimiento de animales callejeros. Construida en **React Native + Expo**, lista para correr en **Expo Go** desde un celular real.
+App de demostración para una plataforma ciudadana de seguimiento de animales callejeros en Santiago de Chile. Construida en **React Native + Expo**, corre en **iOS, Android y Web** desde el mismo código fuente.
 
-> Demo académica. Sin backend real, sin Firebase, sin IA real. Todos los datos son ficticios.
+> Demo académica. Sin backend, sin Firebase, sin IA real. Todos los datos son ficticios.
+
+## Demo en vivo
+
+- **Web (Vercel)**: <https://huellas-seguras-dun.vercel.app/> ← reemplazar con la URL real del deploy
+- **Repositorio**: <https://github.com/cadaeic628/huellas-seguras>
+- **Móvil**: clonar el repo y abrir con Expo Go (ver "Cómo correr localmente").
+
+## ¿Hay estado compartido?
+
+**No.** La app es 100% cliente. Los datos (organizaciones, animales del catálogo, veterinarias) están hardcodeados en `src/data/mockData.js`. Lo que un usuario "reporta" o sube vive solo en `useState` de su pestaña: al recargar vuelve al catálogo inicial, y nadie ve los cambios de nadie. No hay base de datos, ni API, ni `AsyncStorage`.
+
+## Stack
+
+- **Expo SDK 50** + React Native 0.73 + React 18.2
+- **react-navigation v6** — tab navigator inferior
+- **expo-image-picker** — cámara/galería en nativo
+- **expo-image-manipulator** + **upng-js** — pipeline de imagen para el matching
+- **react-native-web** — el mismo código corre en navegador
+- **@expo/vector-icons** (Ionicons)
 
 ## Estructura del proyecto
 
 ```
 .
-├── App.js                       # Navegación inferior (4 tabs)
+├── App.js                       # NavigationContainer + 4 tabs
 ├── app.json                     # Configuración Expo
 ├── babel.config.js
 ├── package.json
@@ -16,60 +35,84 @@ App móvil de demostración para la plataforma ciudadana de seguimiento de anima
     ├── constants/
     │   └── colors.js            # Paleta de colores
     ├── data/
-    │   └── mockData.js          # Animales, veterinarias y organizaciones ficticias
-    └── screens/
-        ├── MapaScreen.js        # Tab 1: Mapa interactivo simulado
-        ├── AnimalesScreen.js    # Tab 2: Catálogo con filtros
-        ├── ReportarScreen.js    # Tab 3: Reporte con "IA" simulada
-        └── DonarScreen.js       # Tab 4: Organizaciones para donar
+    │   └── mockData.js          # ORGANIZACIONES, ANIMALS, VETERINARIAS
+    ├── components/
+    │   ├── FichaAnimalModal.js  # Modal de detalle de animal
+    │   ├── WebCamera.js         # Stub no-op para iOS/Android
+    │   └── WebCamera.web.js     # Cámara getUserMedia para navegador
+    ├── screens/
+    │   ├── MapaScreen.js        # Tab 1: Mapa interactivo simulado
+    │   ├── AnimalesScreen.js    # Tab 2: Catálogo con filtros
+    │   ├── ReportarScreen.js    # Tab 3: Reporte con matching de imágenes
+    │   └── DonarScreen.js       # Tab 4: Organizaciones para donar
+    └── utils/
+        └── imageSimilarity.js   # Matching de imágenes (sin IA)
 ```
 
-## Cómo ejecutar paso a paso
+## Cómo funciona el matching de imágenes ("IA simulada")
 
-### 1. Instalar dependencias
+El botón "Reportar" **no usa ningún modelo entrenado**. Combina dos señales clásicas de computer vision sobre las fotos del catálogo, calculadas íntegramente en el cliente:
 
-Desde la raíz del proyecto, abre la terminal y ejecuta:
+1. **dHash 16×16 (256 bits)** sobre la luminancia → captura estructura de bordes, robusto a cambios de brillo y escala.
+2. **Histograma HSV ponderado al centro** (22 bins: 4 de gris + 18 de hue×sat) → captura color del sujeto. Pesa más el centro para que el sujeto domine sobre el fondo.
+
+Score final: `0.60 × cosine(histogramas) + 0.40 × (1 − hamming/256)`.
+
+Toda la implementación vive en `src/utils/imageSimilarity.js` y usa `expo-image-manipulator` + `upng-js` para decodificar las imágenes a píxeles sin depender del DOM (funciona igual en nativo y web).
+
+## Cómo correr localmente
+
+### Móvil (Expo Go)
 
 ```bash
 npm install
-```
-
-> Esto instalará Expo, React Navigation, vector icons y todas las librerías necesarias.
-
-### 2. Iniciar Expo
-
-```bash
 npx expo start
 ```
 
-Se abrirá una ventana del navegador con un **código QR** y verás opciones en la terminal.
+1. Descarga **Expo Go** ([Android](https://play.google.com/store/apps/details?id=host.exp.exponent) / [iOS](https://apps.apple.com/app/expo-go/id982107779)).
+2. Asegúrate de que celular y computador estén en la **misma WiFi**.
+3. Escanea el QR (Android: dentro de Expo Go; iOS: con la cámara nativa).
 
-### 3. Abrir en tu celular con Expo Go
+Si el QR no carga, presiona `s` en la terminal para modo **Tunnel** (más lento, pero atraviesa NATs y redes distintas).
 
-1. Descarga **Expo Go** desde la tienda de tu celular:
-   - **Android**: [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-   - **iOS**: [App Store](https://apps.apple.com/app/expo-go/id982107779)
+### Web (local)
 
-2. Asegúrate de que el celular y el computador estén en la **misma red WiFi**.
+```bash
+npm run web
+# equivalente a: npx expo start --web
+```
 
-3. Abre Expo Go en el celular:
-   - **Android**: pulsa "Scan QR code" y escanea el código.
-   - **iOS**: usa la cámara nativa para escanear el QR y abre el enlace en Expo Go.
+Abre `http://localhost:8081`. En web la cámara usa `WebCamera.web.js` (`getUserMedia`) porque `expo-image-picker` en navegador solo muestra el file picker.
 
-4. La app se cargará automáticamente en tu celular. ¡Listo!
+## Cómo deployar a Vercel
 
-### Consejos si algo no funciona
+La app exporta a sitio estático — no necesita servidor ni variables de entorno.
 
-- Si el QR no carga, prueba presionar `s` en la terminal para cambiar a modo **Tunnel** (funciona aún con redes WiFi distintas, pero es más lento).
-- Si las imágenes no aparecen, revisa que el celular tenga internet (las fotos vienen de URLs públicas: placedog.net y placekitten.com).
-- Para reiniciar el bundler: presiona `r` en la terminal.
+1. Genera el build local para validar antes de subir:
+   ```bash
+   npx expo export --platform web
+   npx serve dist     # opcional, para verlo en http://localhost:3000
+   ```
+   Output: carpeta `dist/` (~5 MB). Ya está en `.gitignore`.
+
+2. En **vercel.com/new** → Import del repo de GitHub. Framework **Other**, con:
+
+   | Campo | Valor |
+   |---|---|
+   | Build Command | `npx expo export --platform web` |
+   | Output Directory | `dist` |
+   | Install Command | (default `npm install`) |
+   | Environment Variables | ninguna |
+
+3. Deploy.
+
+Si el build falla en Vercel, fija **Node.js 20.x** en Settings → General y redeploy.
 
 ## Funcionalidades por pantalla
 
 ### Tab 1 — Mapa
 - Mapa simulado con calles, marcadores de animales y veterinarias.
 - Marcadores por color (verde = saludable, amarillo = observación, rojo = urgente).
-- Leyenda visible.
 - Toque sobre marcador → tarjeta con foto, nombre, ID, estado y acción.
 - Botón flotante de donación.
 
@@ -77,23 +120,24 @@ Se abrirá una ventana del navegador con un **código QR** y verás opciones en 
 - Catálogo en formato tarjeta con foto, nombre, ID, estado y zona.
 - Filtros: Todos, Saludables, En observación, Urgentes, Apadrinados, Adoptados.
 - Botones "¡Quiero adoptar!" y "Quiero apadrinar".
-- Modal con datos de organización cercana.
+- Modal `FichaAnimalModal` con datos de la organización a cargo.
 
 ### Tab 3 — Reportar
-- Botón "Subir foto" que simula subida de imagen.
-- "IA" simulada propone animales similares del catálogo.
+- "Tomar foto" o "Subir foto" (cámara nativa en móvil, `getUserMedia`/file picker en web).
+- Cálculo de hash perceptual de la foto y ranking de los animales más parecidos del catálogo (ver sección anterior).
 - Opción "No es ninguno / Registrar animal nuevo".
-- Formulario con ubicación, descripción, estado y envío.
+- Formulario con ubicación, descripción, estado.
+- **Importante**: el reporte no se guarda en ningún lado.
 
 ### Tab 4 — Donar
-- Tarjetas por organización: nombre, comuna, descripción.
-- Botón "Ir a donar" con datos de contacto.
+- Tarjetas por organización: nombre, comuna, descripción, horario, teléfono.
+- Datos bancarios ficticios (banco, tipo cuenta, RUT, titular, email).
 
 ## Personalizar
 
-- **Cambiar datos**: edita `src/data/mockData.js` para agregar más animales, veterinarias u organizaciones.
-- **Cambiar colores**: edita `src/constants/colors.js`.
-- **Cambiar imágenes**: reemplaza las URLs de `placedog.net` / `placekitten.com` por tus propias fotos.
+- **Datos**: editar `src/data/mockData.js`. Las fotos del catálogo vienen de Unsplash con tamaño fijo 400×400 (helper `unsplash(id)` al inicio del archivo).
+- **Colores**: `src/constants/colors.js`.
+- **Algoritmo de matching**: parámetros (pesos color/hash, σ del peso central, número de bins) están al principio de `src/utils/imageSimilarity.js`.
 
 ---
 
