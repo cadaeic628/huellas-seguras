@@ -708,6 +708,126 @@ export const ANIMALS = [
   },
 ];
 
+// Actualizaciones publicadas por las fundaciones sobre el uso de las donaciones.
+// monto, foto, boleta son opcionales. animalesRelacionadosIds puede estar vacío.
+// Los posts cubren distintas combinaciones de campos opcionales a propósito.
+export const ACTUALIZACIONES_FORO = [
+  // Post completo: monto + foto + boleta + varios animales
+  {
+    id: 'POST-01',
+    organizacionId: 'ORG-05',
+    fecha: '2026-05-28',
+    titulo: 'Alimento senior para el programa "Adopta un anciano"',
+    descripcion:
+      'Compramos alimento hipoalergénico y suplementos articulares para los 6 perros mayores del programa. Max y Bigotes ya lo están disfrutando.',
+    monto: 215000,
+    foto: 'https://images.unsplash.com/photo-1605897472359-85e4b94d685d?w=600&h=400&fit=crop',
+    boleta: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=600&h=800&fit=crop',
+    animalesRelacionadosIds: ['HS-021', 'HS-022'],
+  },
+  // Monto + boleta + un animal, sin foto del operativo
+  {
+    id: 'POST-02',
+    organizacionId: 'ORG-01',
+    fecha: '2026-06-08',
+    titulo: 'Cirugía y curaciones de Coco',
+    descripcion:
+      'Gracias a un padrino anónimo costeamos la cirugía de Coco para tratar la herida del lomo. Está recuperándose en un hogar de tránsito.',
+    monto: 185000,
+    boleta: 'https://images.unsplash.com/photo-1554224154-22dec7ec8818?w=600&h=800&fit=crop',
+    animalesRelacionadosIds: ['HS-004'],
+  },
+  // Monto + foto + varios animales, SIN boleta (operativo de campaña)
+  {
+    id: 'POST-03',
+    organizacionId: 'ORG-02',
+    fecha: '2026-06-10',
+    titulo: 'Operativo de esterilización masiva en Las Condes',
+    descripcion:
+      'Durante el fin de semana esterilizamos 14 gatos comunitarios en El Golf y Apoquindo. Toda la campaña fue financiada con aportes del último trimestre.',
+    monto: 720000,
+    foto: 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600&h=400&fit=crop',
+    animalesRelacionadosIds: ['HS-007', 'HS-009'],
+  },
+  // Solo monto: resumen financiero text-only
+  {
+    id: 'POST-04',
+    organizacionId: 'ORG-03',
+    fecha: '2026-06-01',
+    titulo: 'Resumen financiero de mayo',
+    descripcion:
+      'En mayo recibimos 38 aportes individuales por un total de $1.245.000. Se destinaron principalmente a alimento (54%), veterinaria (33%) y gastos operativos (13%). Gracias.',
+    monto: 1245000,
+    animalesRelacionadosIds: [],
+  },
+  // Solo foto, sin monto ni boleta, con varios animales (celebración)
+  {
+    id: 'POST-05',
+    organizacionId: 'ORG-04',
+    fecha: '2026-06-13',
+    titulo: '¡Negra ya tuvo a sus cachorros!',
+    descripcion:
+      'Tras dos semanas en el hogar de tránsito, Negra dio a luz a 6 cachorros sanos. Mamá y bebés están bien. Pronto abriremos lista para padrinos y adopción responsable.',
+    foto: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=600&h=400&fit=crop',
+    animalesRelacionadosIds: ['HS-017'],
+  },
+  // Sin nada opcional: pura comunicación
+  {
+    id: 'POST-06',
+    organizacionId: 'ORG-06',
+    fecha: '2026-06-14',
+    titulo: 'Buscamos hogar de tránsito en La Florida',
+    descripcion:
+      'Recibimos una camada de 4 cachorros y nuestro refugio está al tope. Necesitamos un hogar de tránsito por 6 semanas. Cubrimos alimento y veterinaria. Escríbenos por mensaje directo.',
+    animalesRelacionadosIds: [],
+  },
+  // Boleta + un animal, sin monto explícito ni foto (servicio cubierto)
+  {
+    id: 'POST-07',
+    organizacionId: 'ORG-03',
+    fecha: '2026-06-05',
+    titulo: 'Radiografías y antibióticos para Rocky',
+    descripcion:
+      'Rocky fue evaluado en clínica y descartamos fractura. Está con tratamiento antibiótico y antiinflamatorio. Adjuntamos la boleta del centro veterinario.',
+    boleta: 'https://images.unsplash.com/photo-1556742044-3c52d6e88c62?w=600&h=800&fit=crop',
+    animalesRelacionadosIds: ['HS-013'],
+  },
+  // Foto + boleta, sin monto, sin animales (compra de insumos genéricos)
+  {
+    id: 'POST-08',
+    organizacionId: 'ORG-01',
+    fecha: '2026-06-12',
+    titulo: 'Compra de 10 sacos de comida premium',
+    descripcion:
+      'Con los aportes de mayo abastecimos el refugio con 10 sacos de 20kg de comida para perros adultos. Cubre cerca de 6 semanas de alimentación para los 80 animales.',
+    foto: 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=600&h=400&fit=crop',
+    boleta: 'https://images.unsplash.com/photo-1607863680151-cd2d1e63a37c?w=600&h=800&fit=crop',
+    animalesRelacionadosIds: [],
+  },
+  // Solo animales relacionados (varios), sin monto, sin foto, sin boleta
+  {
+    id: 'POST-09',
+    organizacionId: 'ORG-01',
+    fecha: '2026-06-03',
+    titulo: 'Estos peludos completaron su esquema de vacunación',
+    descripcion:
+      'Manchas, Lola y Simba ya están al día con vacunas y desparasitación. Próximo paso: control veterinario en agosto.',
+    animalesRelacionadosIds: ['HS-001', 'HS-002', 'HS-003'],
+  },
+  // Monto + foto, sin boleta, sin animales (campaña difusión)
+  {
+    id: 'POST-10',
+    organizacionId: 'ORG-04',
+    fecha: '2026-05-22',
+    titulo: 'Campaña de vacunación antirrábica en Maipú',
+    descripcion:
+      'Vacunamos 87 perros y gatos comunitarios durante el sábado. Agradecemos a la municipalidad por el espacio y a los voluntarios que se sumaron.',
+    monto: 430000,
+    foto: 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=600&h=400&fit=crop',
+    animalesRelacionadosIds: [],
+  },
+];
+
 export const VETERINARIAS = [
   { id: 'VET-01', nombre: 'Veterinaria Patitas Felices', comuna: 'Ñuñoa',
     telefono: '+56 2 2345 6789', horario: 'Lun a Vie 09:00 - 19:00',
@@ -760,3 +880,8 @@ export const getAnimalesDeOrganizacion = (organizacionId) =>
 
 export const getVeterinariaCercana = (comuna) =>
   VETERINARIAS.find((v) => v.comuna === comuna) || VETERINARIAS[0];
+
+export const getActualizacionesDeOrganizacion = (organizacionId) =>
+  ACTUALIZACIONES_FORO.filter((p) => p.organizacionId === organizacionId);
+
+export const getAnimalById = (id) => ANIMALS.find((a) => a.id === id);
