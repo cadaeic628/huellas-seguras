@@ -27,7 +27,7 @@ App de demostración para una plataforma ciudadana de seguimiento de animales ca
 
 ```
 .
-├── App.js                       # NavigationContainer + 4 tabs
+├── App.js                       # NavigationContainer + 5 tabs (centro elevado)
 ├── app.json                     # Configuración Expo
 ├── babel.config.js
 ├── package.json
@@ -35,7 +35,7 @@ App de demostración para una plataforma ciudadana de seguimiento de animales ca
     ├── constants/
     │   └── colors.js            # Paleta de colores
     ├── data/
-    │   └── mockData.js          # ORGANIZACIONES, ANIMALS, VETERINARIAS
+    │   └── mockData.js          # ORGANIZACIONES, ANIMALS, VETERINARIAS, ACTUALIZACIONES_FORO
     ├── components/
     │   ├── FichaAnimalModal.js  # Modal de detalle de animal
     │   ├── WebCamera.js         # Stub no-op para iOS/Android
@@ -43,8 +43,9 @@ App de demostración para una plataforma ciudadana de seguimiento de animales ca
     ├── screens/
     │   ├── MapaScreen.js        # Tab 1: Mapa interactivo simulado
     │   ├── AnimalesScreen.js    # Tab 2: Catálogo con filtros
-    │   ├── ReportarScreen.js    # Tab 3: Reporte con matching de imágenes
-    │   └── DonarScreen.js       # Tab 4: Organizaciones para donar
+    │   ├── ReportarScreen.js    # Tab 3: Reporte con matching de imágenes (botón central elevado)
+    │   ├── DonarScreen.js       # Tab 4: Organizaciones para donar
+    │   └── ForoScreen.js        # Tab 5: Foro de fundaciones (rendición de cuentas)
     └── utils/
         └── imageSimilarity.js   # Matching de imágenes (sin IA)
 ```
@@ -132,6 +133,16 @@ Si el build falla en Vercel, fija **Node.js 20.x** en Settings → General y red
 ### Tab 4 — Donar
 - Tarjetas por organización: nombre, comuna, descripción, horario, teléfono.
 - Datos bancarios ficticios (banco, tipo cuenta, RUT, titular, email).
+
+### Tab 5 — Foro de fundaciones
+- Feed cronológico de actualizaciones publicadas por las fundaciones sobre cómo usan los aportes recibidos.
+- Cada post puede incluir, todos opcionales: monto (CLP), foto, **boleta/factura** (abre en modal a pantalla completa) y 0+ animales del catálogo relacionados.
+- Botón flotante "+" abre el formulario de publicación. Mientras no exista login, un selector simula qué fundación está autenticada y limita el multi-select de animales a los de esa fundación.
+- Los posts publicados desde la UI viven en `useState` (no persisten).
+
+## Barra inferior
+
+Cinco íconos sin etiqueta. El central (Reportar) es un botón circular elevado siguiendo el patrón clásico de bottom bar con acción primaria. La lógica vive en `App.js` (componente local `CenterTabButton`).
 
 ## Personalizar
 
