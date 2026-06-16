@@ -21,6 +21,7 @@ import {
   getEstadoColor,
 } from '../data/mockData';
 import FichaAnimalModal from '../components/FichaAnimalModal';
+import RedesSocialesRow from '../components/RedesSocialesRow';
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
@@ -383,6 +384,7 @@ export default function MapaScreen() {
                   <Ionicons name="time-outline" size={14} color={COLORS.gray} />
                   <Text style={styles.modalSmall}>{selectedVet.horario}</Text>
                 </View>
+                <RedesSocialesRow redes={selectedVet.redes} style={styles.vetRedesRow} />
                 <TouchableOpacity
                   style={[styles.primaryButton, { backgroundColor: COLORS.secondary }]}
                   onPress={handleContactar}
@@ -480,6 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 25, marginTop: 14,
   },
   primaryButtonText: { color: COLORS.white, fontWeight: 'bold' },
+  vetRedesRow: { marginTop: 10, justifyContent: 'center' },
   vetIconWrapper: {
     width: 70, height: 70, borderRadius: 12, backgroundColor: COLORS.secondary,
     justifyContent: 'center', alignItems: 'center', marginBottom: 14,
