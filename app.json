@@ -31,6 +31,10 @@
           "photosPermission": "Huellas Seguras necesita acceso a tus fotos para que puedas adjuntar imágenes al reporte."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
+      "SUPABASE_ANON_KEY": "REEMPLAZAR_CON_ANON_KEY"
+    }
   }
 }
