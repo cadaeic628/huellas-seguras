@@ -10,6 +10,8 @@ import AnimalesScreen from './src/screens/AnimalesScreen';
 import ReportarScreen from './src/screens/ReportarScreen';
 import DonarScreen from './src/screens/DonarScreen';
 import ForoScreen from './src/screens/ForoScreen';
+import AuthScreen from './src/screens/AuthScreen';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { COLORS } from './src/constants/colors';
 
 const Tab = createBottomTabNavigator();
@@ -43,65 +45,96 @@ function CenterTabButton({ children, onPress, accessibilityState }) {
   );
 }
 
+// Botón temporal de cerrar sesión en el header. Cuando se implemente el tab
+// "Mi perfil" (Roadmap §3) se mueve allí y se quita de aquí.
+function HeaderLogoutButton() {
+  const { logout } = useAuth();
+  return (
+    <TouchableOpacity
+      onPress={logout}
+      style={styles.logoutBtn}
+      hitSlop={10}
+      activeOpacity={0.7}
+    >
+      <Ionicons name="log-out-outline" size={22} color={COLORS.white} />
+    </TouchableOpacity>
+  );
+}
+
+function MainNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerStyle: { backgroundColor: COLORS.primary },
+        headerTintColor: COLORS.white,
+        headerTitleStyle: { fontWeight: 'bold' },
+        headerRight: () => <HeaderLogoutButton />,
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.gray,
+        tabBarShowLabel: false,
+        tabBarStyle: styles.tabBar,
+        tabBarItemStyle: styles.tabItem,
+        tabBarIcon: ({ color, focused }) => {
+          const iconName = TAB_ICONS[route.name];
+          if (route.name === 'Reportar') {
+            return <Ionicons name={iconName} size={26} color={COLORS.white} />;
+          }
+          return (
+            <Ionicons
+              name={focused ? iconName : `${iconName}-outline`}
+              size={26}
+              color={color}
+            />
+          );
+        },
+      })}
+    >
+      <Tab.Screen
+        name="Mapa"
+        component={MapaScreen}
+        options={{ title: 'Huellas Seguras' }}
+      />
+      <Tab.Screen
+        name="Animales"
+        component={AnimalesScreen}
+        options={{ title: 'Catálogo de Animales' }}
+      />
+      <Tab.Screen
+        name="Reportar"
+        component={ReportarScreen}
+        options={{
+          title: 'Reportar Animal',
+          tabBarButton: (props) => <CenterTabButton {...props} />,
+        }}
+      />
+      <Tab.Screen
+        name="Donar"
+        component={DonarScreen}
+        options={{ title: 'Donar' }}
+      />
+      <Tab.Screen
+        name="Foro"
+        component={ForoScreen}
+        options={{ title: 'Foro de fundaciones' }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+function RootGate() {
+  const { user } = useAuth();
+  if (!user) return <AuthScreen />;
+  return <MainNavigator />;
+}
+
 export default function App() {
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerStyle: { backgroundColor: COLORS.primary },
-          headerTintColor: COLORS.white,
-          headerTitleStyle: { fontWeight: 'bold' },
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: COLORS.gray,
-          tabBarShowLabel: false,
-          tabBarStyle: styles.tabBar,
-          tabBarItemStyle: styles.tabItem,
-          tabBarIcon: ({ color, focused }) => {
-            const iconName = TAB_ICONS[route.name];
-            if (route.name === 'Reportar') {
-              return <Ionicons name={iconName} size={26} color={COLORS.white} />;
-            }
-            return (
-              <Ionicons
-                name={focused ? iconName : `${iconName}-outline`}
-                size={26}
-                color={color}
-              />
-            );
-          },
-        })}
-      >
-        <Tab.Screen
-          name="Mapa"
-          component={MapaScreen}
-          options={{ title: 'Huellas Seguras' }}
-        />
-        <Tab.Screen
-          name="Animales"
-          component={AnimalesScreen}
-          options={{ title: 'Catálogo de Animales' }}
-        />
-        <Tab.Screen
-          name="Reportar"
-          component={ReportarScreen}
-          options={{
-            title: 'Reportar Animal',
-            tabBarButton: (props) => <CenterTabButton {...props} />,
-          }}
-        />
-        <Tab.Screen
-          name="Donar"
-          component={DonarScreen}
-          options={{ title: 'Donar' }}
-        />
-        <Tab.Screen
-          name="Foro"
-          component={ForoScreen}
-          options={{ title: 'Foro de fundaciones' }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
+        <StatusBar style="light" />
+        <RootGate />
+      </NavigationContainer>
+    </AuthProvider>
   );
 }
 
@@ -137,4 +170,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   centerButtonFocused: { backgroundColor: COLORS.accent },
+  logoutBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

@@ -868,6 +868,35 @@ export const getEstadoColor = (estado) => {
   }
 };
 
+// Usuarios demo para el mock de auth. Las contraseñas viven en texto plano
+// porque toda la sesión es client-side y no hay backend. Cuando se migre a
+// Supabase Auth (ver Roadmap §4) este arreglo desaparece.
+export const USUARIOS_DEMO = [
+  {
+    id: 'USER-DEMO-01',
+    email: 'maria@example.com',
+    password: 'demo123',
+    nombre: 'María González',
+    role: 'normal',
+  },
+  {
+    id: 'USER-DEMO-02',
+    email: 'refugio@example.com',
+    password: 'demo123',
+    nombre: 'Fundación Refugio Esperanza',
+    role: 'fundacion',
+    organizacionId: 'ORG-01',
+  },
+  {
+    id: 'USER-DEMO-03',
+    email: 'huellitas@example.com',
+    password: 'demo123',
+    nombre: 'Asociación Huellitas',
+    role: 'fundacion',
+    organizacionId: 'ORG-02',
+  },
+];
+
 // Helpers de correlación
 export const getOrganizacionById = (id) =>
   ORGANIZACIONES.find((o) => o.id === id);

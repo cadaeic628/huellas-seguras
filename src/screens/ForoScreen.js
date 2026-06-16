@@ -16,15 +16,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../constants/colors';
 import {
   ACTUALIZACIONES_FORO,
-  ORGANIZACIONES,
   getOrganizacionById,
   getAnimalesDeOrganizacion,
   getAnimalById,
 } from '../data/mockData';
-
-// Mientras no haya login, asumimos que la sesión está iniciada como fundación.
-// Se ofrece un selector para simular distintas fundaciones.
-const FUNDACION_ACTIVA_DEFAULT = 'ORG-01';
+import { useAuth } from '../contexts/AuthContext';
 
 const currencyCLP = (n) =>
   '$' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -106,35 +102,6 @@ function PostCard({ post, onAbrirBoleta }) {
           </View>
         </View>
       )}
-    </View>
-  );
-}
-
-function FoundationSelector({ value, onChange }) {
-  return (
-    <View style={styles.selectorRow}>
-      <Text style={styles.selectorLabel}>Publicando como:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {ORGANIZACIONES.map((org) => {
-          const active = org.id === value;
-          return (
-            <TouchableOpacity
-              key={org.id}
-              style={[styles.selectorChip, active && styles.selectorChipActive]}
-              onPress={() => onChange(org.id)}
-            >
-              <Text
-                style={[
-                  styles.selectorChipText,
-                  active && styles.selectorChipTextActive,
-                ]}
-              >
-                {org.nombre}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
     </View>
   );
 }
@@ -409,7 +376,10 @@ function ReceiptModal({ post, onClose }) {
 }
 
 export default function ForoScreen() {
-  const [fundacionId, setFundacionId] = useState(FUNDACION_ACTIVA_DEFAULT);
+  const { user } = useAuth();
+  const esFundacion = user?.role === 'fundacion';
+  const fundacionId = user?.organizacionId;
+
   const [postsLocales, setPostsLocales] = useState([]);
   const [publishOpen, setPublishOpen] = useState(false);
   const [boletaPost, setBoletaPost] = useState(null);
@@ -439,8 +409,6 @@ export default function ForoScreen() {
           </Text>
         </View>
 
-        <FoundationSelector value={fundacionId} onChange={setFundacionId} />
-
         {feed.map((post) => (
           <PostCard
             key={post.id}
@@ -449,26 +417,32 @@ export default function ForoScreen() {
           />
         ))}
 
-        <Text style={styles.footerNote}>
-          ¿Eres una fundación? Toca el botón "+" para publicar una nueva
-          actualización.
-        </Text>
+        {esFundacion && (
+          <Text style={styles.footerNote}>
+            Toca el botón "+" para publicar una nueva actualización de tu
+            fundación.
+          </Text>
+        )}
       </ScrollView>
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setPublishOpen(true)}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={28} color={COLORS.white} />
-      </TouchableOpacity>
+      {esFundacion && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setPublishOpen(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={28} color={COLORS.white} />
+        </TouchableOpacity>
+      )}
 
-      <PublishModal
-        visible={publishOpen}
-        fundacionId={fundacionId}
-        onCancel={() => setPublishOpen(false)}
-        onPublish={handlePublish}
-      />
+      {esFundacion && (
+        <PublishModal
+          visible={publishOpen}
+          fundacionId={fundacionId}
+          onCancel={() => setPublishOpen(false)}
+          onPublish={handlePublish}
+        />
+      )}
 
       <ReceiptModal post={boletaPost} onClose={() => setBoletaPost(null)} />
     </View>
@@ -498,31 +472,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 17,
   },
-
-  selectorRow: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 14,
-  },
-  selectorLabel: {
-    fontSize: 11,
-    color: COLORS.gray,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  selectorChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: COLORS.background,
-    marginRight: 6,
-  },
-  selectorChipActive: { backgroundColor: COLORS.primary },
-  selectorChipText: { fontSize: 11, color: COLORS.text, fontWeight: '600' },
-  selectorChipTextActive: { color: COLORS.white },
 
   postCard: {
     backgroundColor: COLORS.white,

@@ -29,12 +29,25 @@ src/
   utils/                 # Lógica pura sin React (matching de imágenes)
 ```
 
-## Estado actual de auth
+## Auth (mockeada, sin backend)
 
-**No hay auth real.** `ForoScreen.js` muestra un selector visible al usuario que simula
-qué fundación está autenticada. Solo se usa para limitar el multi-select de animales
-en el formulario de publicación. Cuando se implemente auth real (ver Roadmap §1), ese
-selector se reemplaza por el rol del usuario logueado.
+- `src/contexts/AuthContext.js` expone `useAuth()` con `{ user, login, logout,
+  signupNormal, signupFundacion }`. La sesión vive en memoria; al recargar la app
+  vuelve al estado deslogueado (igual que el resto de la data).
+- `App.js` envuelve todo en `<AuthProvider>` y, vía `RootGate`, muestra
+  `AuthScreen` si no hay sesión.
+- Dos roles: `normal` y `fundacion`. Un usuario `fundacion` tiene
+  `user.organizacionId` apuntando a `ORGANIZACIONES`. Al signup como fundación se
+  inserta el registro nuevo en `ORGANIZACIONES` (mutación directa del arreglo —
+  desaparece cuando se migre a Supabase).
+- Cuentas demo: `maria@example.com / demo123` (normal), `refugio@example.com /
+  demo123` y `huellitas@example.com / demo123` (fundaciones). Viven en
+  `USUARIOS_DEMO` de `mockData.js`.
+- **Logout temporal**: ícono `log-out-outline` en el `headerRight` de todos los
+  tabs. Se mueve al tab "Mi perfil" cuando se implemente Roadmap §2 (Mi perfil).
+- **Gating de UI por rol**: para ocultar/mostrar acciones según el rol, leer
+  `user.role` de `useAuth()`. Ejemplo: `ForoScreen.js` solo muestra el FAB de
+  publicar si `user.role === 'fundacion'`.
 
 ## Veterinarias
 
@@ -62,36 +75,9 @@ Las secciones siguientes son **briefings autocontenidos** para que una sesión n
 pueda implementar cada feature sin más contexto. Implementar **una a la vez** en
 commits atómicos.
 
-## 1. Auth real: login, signup, logout, 2 tipos de usuario
+## 1. Redes sociales en fundaciones y veterinarias
 
-**Tipos**: `normal`, `fundacion`. (Las veterinarias no se registran — ver sección
-"Veterinarias" arriba).
-
-**UX esperado**:
-- Al abrir la app sin sesión, mostrar pantalla de login (con tabs Login / Crear cuenta).
-- En signup pedir tipo de cuenta. Si es `fundacion`, pedir datos extra (nombre,
-  comuna, descripción, comunas de operación, datos bancarios, redes) y crear su
-  registro en `ORGANIZACIONES` automáticamente.
-- Botón "Cerrar sesión" en el tab "Mi perfil" (§3).
-- El rol del usuario condiciona qué puede hacer:
-  - `fundacion` → único que puede publicar en el Foro (eliminar el selector
-    placeholder de `ForoScreen.js`).
-  - `normal` → reportar animales, donar, ver foro, apadrinar.
-
-**Implementación recomendada**: Supabase Auth (ver §4). Mientras tanto, si se quiere
-mockear sin DB: un `AuthContext` con `useState` + `AsyncStorage` que guarda
-`{ userId, role, organizacionId? }`.
-
-**Archivos a tocar**:
-- Crear `src/screens/AuthScreen.js`, `src/contexts/AuthContext.js`.
-- `App.js`: envolver el navigator en `<AuthProvider>` y mostrar `AuthScreen` si no
-  hay sesión.
-- `ForoScreen.js`: quitar `FoundationSelector`; usar `useAuth()` para obtener
-  `organizacionId`. Mostrar el FAB de publicar solo si rol es `fundacion`.
-
-## 2. Redes sociales en fundaciones y veterinarias
-
-Las fundaciones pueden editar sus redes desde "Mi perfil" (§3). Las redes de las
+Las fundaciones pueden editar sus redes desde "Mi perfil" (§2). Las redes de las
 veterinarias quedan precargadas en `mockData.js` (o en la tabla `veterinarias`) y
 no son editables desde la app — se ven solo como información pública.
 
@@ -117,9 +103,9 @@ redes: {
 
 **Extensión opcional**: badge "Es un donante" en la tarjeta de Donar cuando el usuario
 logueado ya haya hecho aportes a esa fundación. Requiere persistir el historial de
-donaciones (§4) y leer del `AuthContext` (§1).
+donaciones (§3) y leer del `AuthContext`.
 
-## 3. Tab "Mi perfil"
+## 2. Tab "Mi perfil"
 
 Nuevo tab (sexto) o reemplazo del actual de Donar dentro de un drawer. Si se agrega
 como tab, el bottom bar pasa a 6 íconos: revisar tamaños en `App.js`.
@@ -145,7 +131,7 @@ como tab, el bottom bar pasa a 6 íconos: revisar tamaños en `App.js`.
 **Archivos**: crear `src/screens/PerfilScreen.js`. Registrar tab en `App.js` con
 ícono `person` / `person-outline`.
 
-## 4. Persistencia real (base de datos)
+## 3. Persistencia real (base de datos)
 
 **Recomendación**: **Supabase**. Razones: Postgres real, Auth + Storage + Realtime
 incluidos, plan free generoso, SDK JS oficial que funciona en RN sin polyfills
@@ -202,7 +188,7 @@ foro_post_animales (post_id FK, animal_id FK)   -- N:M relación
 8. Variables sensibles: anon key va en `app.json` (es pública por diseño), nunca
    commitear la `service_role` key.
 
-## 5. Bug: animales adoptados muestran "Quiero adoptar"
+## 4. Bug: animales adoptados muestran "Quiero adoptar"
 
 En `src/screens/AnimalesScreen.js`, los animales con `adoptado === true` (ej:
 Pelusa HS-005, Misha HS-007) siguen mostrando el botón "¡Quiero adoptar!".
@@ -215,7 +201,7 @@ Pelusa HS-005, Misha HS-007) siguen mostrando el botón "¡Quiero adoptar!".
 - Revisar consistencia: el filtro "Adoptados" hoy los deja ver, lo cual es
   correcto — el problema es solo el botón.
 
-## 6. Headers alineados a la derecha
+## 5. Headers alineados a la derecha
 
 Hoy los títulos del header (`title` en cada `<Tab.Screen>`) están centrados por
 defecto. Se quiere alinearlos a la derecha para que en una iteración futura quepa
