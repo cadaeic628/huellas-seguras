@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { forwardRef, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -97,6 +97,7 @@ function LoginForm({ onSubmit }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState(null);
+  const passwordRef = useRef(null);
 
   const emailFormatError =
     email.trim().length > 0 && !isValidEmail(email)
@@ -127,9 +128,13 @@ function LoginForm({ onSubmit }) {
         keyboardType="email-address"
         autoCapitalize="none"
         autoComplete="email"
+        returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => passwordRef.current?.focus()}
         error={emailFormatError}
       />
       <Field
+        ref={passwordRef}
         label="Contraseña"
         value={password}
         onChangeText={(t) => {
@@ -137,6 +142,8 @@ function LoginForm({ onSubmit }) {
           setAuthError(null);
         }}
         secureTextEntry
+        returnKeyType="go"
+        onSubmitEditing={handle}
       />
 
       <PrimaryButton
@@ -578,11 +585,15 @@ function RoleChip({ active, onPress, icon, label }) {
   );
 }
 
-function Field({ label, multiline, error, ...rest }) {
+const Field = forwardRef(function Field(
+  { label, multiline, error, ...rest },
+  ref
+) {
   return (
     <>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        ref={ref}
         style={[
           styles.input,
           multiline && styles.inputMultiline,
@@ -595,7 +606,7 @@ function Field({ label, multiline, error, ...rest }) {
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
     </>
   );
-}
+});
 
 function DropdownTrigger({ label, value, placeholder, onPress, compact }) {
   return (
