@@ -868,6 +868,20 @@ export const getEstadoColor = (estado) => {
   }
 };
 
+// Listado de referencia: 32 comunas de la Provincia de Santiago + Puente Alto
+// y San Bernardo (que pertenecen al Gran Santiago pero a otras provincias).
+// Lo usan los formularios de auth para los dropdowns de comuna sede y comunas
+// de operación de las fundaciones.
+export const COMUNAS_SANTIAGO = [
+  'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central',
+  'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja',
+  'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo',
+  'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda',
+  'Peñalolén', 'Providencia', 'Pudahuel', 'Puente Alto', 'Quilicura',
+  'Quinta Normal', 'Recoleta', 'Renca', 'San Bernardo', 'San Joaquín',
+  'San Miguel', 'San Ramón', 'Santiago Centro', 'Vitacura',
+];
+
 // Usuarios demo para el mock de auth. Las contraseñas viven en texto plano
 // porque toda la sesión es client-side y no hay backend. Cuando se migre a
 // Supabase Auth (ver Roadmap §4) este arreglo desaparece.
