@@ -15,6 +15,7 @@ import {
   ORGANIZACIONES,
   getAnimalesDeOrganizacion,
 } from '../data/mockData';
+import RedesSocialesRow from '../components/RedesSocialesRow';
 
 function copyToClipboard(text) {
   if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -87,6 +88,8 @@ export default function DonarScreen() {
                 </View>
               </View>
             </View>
+
+            <RedesSocialesRow redes={org.redes} style={styles.redesRow} />
 
             <Text style={styles.cardDescripcion}>{org.descripcion}</Text>
 
@@ -251,6 +254,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.text },
   cardComunaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   cardComuna: { fontSize: 12, color: COLORS.gray, marginLeft: 3 },
+  redesRow: { marginBottom: 10 },
   cardDescripcion: { fontSize: 13, color: COLORS.text, marginBottom: 12, lineHeight: 18 },
   statsRow: {
     flexDirection: 'row', backgroundColor: COLORS.background,
