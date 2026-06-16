@@ -20,10 +20,12 @@ Su objetivo es que una sesión nueva pueda colaborar sin re-explorar todo el rep
 ## Estructura
 
 ```
-App.js                   # NavigationContainer + 5 tabs (centro elevado, sin labels)
+App.js                   # NavigationContainer + 6 tabs (centro elevado: Reportar)
 src/
   constants/colors.js    # COLORS
-  data/mockData.js       # ORGANIZACIONES, ANIMALS, VETERINARIAS, ACTUALIZACIONES_FORO + helpers
+  data/mockData.js       # ORGANIZACIONES, ANIMALS, VETERINARIAS, ACTUALIZACIONES_FORO,
+                         # DONACIONES, REPORTES_USUARIO, APADRINAMIENTOS_USUARIO,
+                         # ADOPCIONES_USUARIO + helpers
   components/            # Reutilizables (modal de ficha, cámara web)
   screens/               # Una pantalla por tab
   utils/                 # Lógica pura sin React (matching de imágenes)
@@ -43,11 +45,11 @@ src/
 - Cuentas demo: `maria@example.com / demo123` (normal), `refugio@example.com /
   demo123` y `huellitas@example.com / demo123` (fundaciones). Viven en
   `USUARIOS_DEMO` de `mockData.js`.
-- **Logout temporal**: ícono `log-out-outline` en el `headerRight` de todos los
-  tabs. Se mueve al tab "Mi perfil" cuando se implemente Roadmap §2 (Mi perfil).
+- **Logout**: vive en el tab "Mi perfil" (`PerfilScreen.js`).
 - **Gating de UI por rol**: para ocultar/mostrar acciones según el rol, leer
   `user.role` de `useAuth()`. Ejemplo: `ForoScreen.js` solo muestra el FAB de
-  publicar si `user.role === 'fundacion'`.
+  publicar si `user.role === 'fundacion'`. `PerfilScreen.js` ramifica la vista
+  completa con un branch por rol.
 
 ## Veterinarias
 
@@ -75,63 +77,7 @@ Las secciones siguientes son **briefings autocontenidos** para que una sesión n
 pueda implementar cada feature sin más contexto. Implementar **una a la vez** en
 commits atómicos.
 
-## 1. Redes sociales en fundaciones y veterinarias
-
-Las fundaciones pueden editar sus redes desde "Mi perfil" (§2). Las redes de las
-veterinarias quedan precargadas en `mockData.js` (o en la tabla `veterinarias`) y
-no son editables desde la app — se ven solo como información pública.
-
-Agregar a cada item de `ORGANIZACIONES` y `VETERINARIAS` un objeto opcional:
-
-```js
-redes: {
-  instagram: '@refugioesperanza',     // opcional
-  facebook: 'RefugioEsperanzaCL',     // opcional
-  whatsapp: '+56987654321',           // opcional
-  web: 'https://refugioesperanza.cl', // opcional
-}
-```
-
-**UX**:
-- En la tarjeta de Donar mostrar una fila de íconos clickeables (Ionicons:
-  `logo-instagram`, `logo-facebook`, `logo-whatsapp`, `globe-outline`) bajo el
-  header de la organización.
-- En el callout / ficha de cada veterinaria del mapa mostrar la misma fila.
-- Toque → `Linking.openURL` con la URL correspondiente (`https://instagram.com/{handle}`,
-  `https://wa.me/{phone}`, etc.).
-- Si la entidad no tiene redes, no mostrar la fila.
-
-**Extensión opcional**: badge "Es un donante" en la tarjeta de Donar cuando el usuario
-logueado ya haya hecho aportes a esa fundación. Requiere persistir el historial de
-donaciones (§3) y leer del `AuthContext`.
-
-## 2. Tab "Mi perfil"
-
-Nuevo tab (sexto) o reemplazo del actual de Donar dentro de un drawer. Si se agrega
-como tab, el bottom bar pasa a 6 íconos: revisar tamaños en `App.js`.
-
-**Propuesta de contenido por rol**:
-
-**Usuario normal**:
-- Header con foto/avatar (placeholder con iniciales) + nombre + email.
-- Animales que apadrina (chips con foto pequeña, navega a la ficha).
-- Animales que reportó (lista con fecha + estado).
-- Historial de aportes (fecha + organización + monto).
-- Botones: Editar datos, Cerrar sesión, Eliminar cuenta.
-
-**Fundación**:
-- Mismo header.
-- Tarjeta editable con los datos públicos de la fundación (los que aparecen en
-  `DonarScreen`: descripción, comuna, comunas de operación, horario, redes, datos
-  bancarios, foto/logo).
-- Resumen: total recibido en aportes, # animales en seguimiento, # posts en foro.
-- Atajo: "Publicar nueva actualización" (lleva al modal de `ForoScreen`).
-- Cerrar sesión.
-
-**Archivos**: crear `src/screens/PerfilScreen.js`. Registrar tab en `App.js` con
-ícono `person` / `person-outline`.
-
-## 3. Persistencia real (base de datos)
+## 1. Persistencia real (base de datos)
 
 **Recomendación**: **Supabase**. Razones: Postgres real, Auth + Storage + Realtime
 incluidos, plan free generoso, SDK JS oficial que funciona en RN sin polyfills
@@ -188,7 +134,7 @@ foro_post_animales (post_id FK, animal_id FK)   -- N:M relación
 8. Variables sensibles: anon key va en `app.json` (es pública por diseño), nunca
    commitear la `service_role` key.
 
-## 4. Bug: animales adoptados muestran "Quiero adoptar"
+## 2. Bug: animales adoptados muestran "Quiero adoptar"
 
 En `src/screens/AnimalesScreen.js`, los animales con `adoptado === true` (ej:
 Pelusa HS-005, Misha HS-007) siguen mostrando el botón "¡Quiero adoptar!".
@@ -201,7 +147,7 @@ Pelusa HS-005, Misha HS-007) siguen mostrando el botón "¡Quiero adoptar!".
 - Revisar consistencia: el filtro "Adoptados" hoy los deja ver, lo cual es
   correcto — el problema es solo el botón.
 
-## 5. Headers alineados a la derecha
+## 3. Headers alineados a la derecha
 
 Hoy los títulos del header (`title` en cada `<Tab.Screen>`) están centrados por
 defecto. Se quiere alinearlos a la derecha para que en una iteración futura quepa
