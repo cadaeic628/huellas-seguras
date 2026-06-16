@@ -6,24 +6,42 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useAuth } from '../contexts/AuthContext';
+import { COMUNAS_SANTIAGO } from '../data/mockData';
+import OptionsPickerModal from '../components/OptionsPickerModal';
+import {
+  isValidEmail,
+  passwordChecks,
+  isPasswordStrong,
+  formatRut,
+  isValidRut,
+  formatPhoneDigits,
+  formatPhoneDisplay,
+  isValidPhone,
+  formatTime,
+  isValidTime,
+} from '../utils/validation';
+
+const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export default function AuthScreen() {
   const { login, signupNormal, signupFundacion } = useAuth();
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [mode, setMode] = useState('login');
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.root}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.brand}>
           <View style={styles.logoCircle}>
             <Ionicons name="paw" size={36} color={COLORS.white} />
@@ -40,7 +58,9 @@ export default function AuthScreen() {
             onPress={() => setMode('login')}
             activeOpacity={0.85}
           >
-            <Text style={[styles.tabText, mode === 'login' && styles.tabTextActive]}>
+            <Text
+              style={[styles.tabText, mode === 'login' && styles.tabTextActive]}
+            >
               Iniciar sesión
             </Text>
           </TouchableOpacity>
@@ -49,7 +69,9 @@ export default function AuthScreen() {
             onPress={() => setMode('signup')}
             activeOpacity={0.85}
           >
-            <Text style={[styles.tabText, mode === 'signup' && styles.tabTextActive]}>
+            <Text
+              style={[styles.tabText, mode === 'signup' && styles.tabTextActive]}
+            >
               Crear cuenta
             </Text>
           </TouchableOpacity>
@@ -68,39 +90,61 @@ export default function AuthScreen() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Login
+// ---------------------------------------------------------------------------
 function LoginForm({ onSubmit }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState(null);
+
+  const emailFormatError =
+    email.trim().length > 0 && !isValidEmail(email)
+      ? 'El formato del email no es válido.'
+      : null;
+
+  const canSubmit = isValidEmail(email) && password.length > 0;
 
   const handle = () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Faltan datos', 'Ingresa email y contraseña.');
-      return;
-    }
+    setAuthError(null);
+    if (!canSubmit) return;
     const res = onSubmit(email, password);
-    if (!res.ok) Alert.alert('No se pudo ingresar', res.error);
+    if (!res.ok) setAuthError(res.error || 'No se pudo iniciar sesión.');
   };
 
   return (
     <View style={styles.card}>
+      {authError && <ErrorBanner message={authError} />}
+
       <Field
         label="Email"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(t) => {
+          setEmail(t);
+          setAuthError(null);
+        }}
+        placeholder="tu@email.cl"
         keyboardType="email-address"
         autoCapitalize="none"
         autoComplete="email"
+        error={emailFormatError}
       />
       <Field
         label="Contraseña"
         value={password}
-        onChangeText={setPassword}
+        onChangeText={(t) => {
+          setPassword(t);
+          setAuthError(null);
+        }}
         secureTextEntry
       />
-      <TouchableOpacity style={styles.primaryBtn} onPress={handle} activeOpacity={0.85}>
-        <Ionicons name="log-in-outline" size={18} color={COLORS.white} />
-        <Text style={styles.primaryBtnText}>Entrar</Text>
-      </TouchableOpacity>
+
+      <PrimaryButton
+        onPress={handle}
+        disabled={!canSubmit}
+        icon="log-in-outline"
+        label="Entrar"
+      />
 
       <View style={styles.demoBox}>
         <Text style={styles.demoTitle}>Cuentas de prueba</Text>
@@ -112,46 +156,91 @@ function LoginForm({ onSubmit }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Signup
+// ---------------------------------------------------------------------------
 function SignupForm({ onSignupNormal, onSignupFundacion }) {
   const [role, setRole] = useState('normal');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nombre, setNombre] = useState('');
+  const [authError, setAuthError] = useState(null);
 
-  // Solo para fundación
+  // Fundación
   const [comuna, setComuna] = useState('');
+  const [comunasOperacion, setComunasOperacion] = useState([]);
   const [descripcion, setDescripcion] = useState('');
-  const [comunasOpStr, setComunasOpStr] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [horario, setHorario] = useState('');
+  const [telefonoDigits, setTelefonoDigits] = useState('');
+  const [dayFrom, setDayFrom] = useState('');
+  const [dayTo, setDayTo] = useState('');
+  const [timeFrom, setTimeFrom] = useState('');
+  const [timeTo, setTimeTo] = useState('');
   const [bancoNombre, setBancoNombre] = useState('');
   const [bancoTipo, setBancoTipo] = useState('');
   const [bancoNumero, setBancoNumero] = useState('');
   const [bancoRut, setBancoRut] = useState('');
 
+  // Picker state
+  const [picker, setPicker] = useState(null); // 'comuna' | 'comunasOp' | 'dayFrom' | 'dayTo'
+
+  // --- Errores inline (solo se muestran si el campo tiene contenido) ---
+  const emailFormatError =
+    email.trim().length > 0 && !isValidEmail(email)
+      ? 'El formato del email no es válido.'
+      : null;
+
+  const checks = passwordChecks(password);
+  const passwordStrong = isPasswordStrong(password);
+
+  const telefonoError =
+    telefonoDigits.length > 0 && !isValidPhone(telefonoDigits)
+      ? 'Teléfono inválido. Debe tener 9 dígitos y empezar con 9.'
+      : null;
+  const rutError =
+    bancoRut.length > 0 && !isValidRut(bancoRut)
+      ? 'RUT inválido. Verifica el número y el dígito verificador.'
+      : null;
+  const timeFromError =
+    timeFrom.length > 0 && !isValidTime(timeFrom)
+      ? 'Hora inválida (formato HH:MM, 00:00 a 23:59).'
+      : null;
+  const timeToError =
+    timeTo.length > 0 && !isValidTime(timeTo)
+      ? 'Hora inválida (formato HH:MM, 00:00 a 23:59).'
+      : null;
+
+  // --- Habilitación del botón ---
+  const baseOk =
+    isValidEmail(email) && passwordStrong && nombre.trim().length > 0;
+
+  const fundacionOk =
+    !!comuna &&
+    comunasOperacion.length > 0 &&
+    descripcion.trim().length > 0 &&
+    isValidPhone(telefonoDigits) &&
+    !!dayFrom &&
+    !!dayTo &&
+    isValidTime(timeFrom) &&
+    isValidTime(timeTo) &&
+    bancoNombre.trim().length > 0 &&
+    bancoTipo.trim().length > 0 &&
+    bancoNumero.trim().length > 0 &&
+    isValidRut(bancoRut);
+
+  const canSubmit = role === 'normal' ? baseOk : baseOk && fundacionOk;
+
   const handle = () => {
-    if (!email.trim() || !password || !nombre.trim()) {
-      Alert.alert('Faltan datos', 'Email, contraseña y nombre son obligatorios.');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Contraseña muy corta', 'Debe tener al menos 6 caracteres.');
-      return;
-    }
+    setAuthError(null);
+    if (!canSubmit) return;
+
     if (role === 'normal') {
       const res = onSignupNormal({ email, password, nombre });
-      if (!res.ok) Alert.alert('No se pudo registrar', res.error);
+      if (!res.ok) setAuthError(res.error);
       return;
     }
-    if (!comuna.trim() || !descripcion.trim()) {
-      Alert.alert('Faltan datos', 'La comuna y la descripción de la fundación son obligatorias.');
-      return;
-    }
-    const comunasOperacion = comunasOpStr
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (comunasOperacion.length === 0) comunasOperacion.push(comuna.trim());
+
+    const horario = `${dayFrom} a ${dayTo} ${timeFrom} - ${timeTo}`;
+    const telefono = `+56 ${formatPhoneDisplay(telefonoDigits)}`;
 
     const res = onSignupFundacion({
       email,
@@ -163,19 +252,21 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
       telefono,
       horario,
       banco: {
-        banco: bancoNombre.trim() || '—',
-        tipoCuenta: bancoTipo.trim() || '—',
-        numero: bancoNumero.trim() || '—',
-        rut: bancoRut.trim() || '—',
+        banco: bancoNombre.trim(),
+        tipoCuenta: bancoTipo.trim(),
+        numero: bancoNumero.trim(),
+        rut: bancoRut,
         titular: nombre.trim(),
         email: email.trim(),
       },
     });
-    if (!res.ok) Alert.alert('No se pudo registrar', res.error);
+    if (!res.ok) setAuthError(res.error);
   };
 
   return (
     <View style={styles.card}>
+      {authError && <ErrorBanner message={authError} />}
+
       <Text style={styles.fieldLabel}>Tipo de cuenta</Text>
       <View style={styles.roleRow}>
         <RoleChip
@@ -200,47 +291,152 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
       <Field
         label="Email"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(t) => {
+          setEmail(t);
+          setAuthError(null);
+        }}
+        placeholder="tu@email.cl"
         keyboardType="email-address"
         autoCapitalize="none"
         autoComplete="email"
+        error={emailFormatError}
       />
-      <Field
-        label="Contraseña (mínimo 6 caracteres)"
+
+      <Text style={styles.fieldLabel}>Contraseña</Text>
+      <TextInput
         value={password}
         onChangeText={setPassword}
+        style={styles.input}
         secureTextEntry
+        placeholderTextColor={COLORS.gray}
       />
+      <PasswordRequirements checks={checks} />
 
       {role === 'fundacion' && (
         <>
-          <Field label="Comuna sede" value={comuna} onChangeText={setComuna} />
-          <Field
-            label="Comunas de operación (separadas por coma)"
-            value={comunasOpStr}
-            onChangeText={setComunasOpStr}
-            placeholder="Ñuñoa, Providencia, Macul"
+          <Text style={styles.sectionTitle}>Datos de la fundación</Text>
+
+          <DropdownTrigger
+            label="Comuna sede"
+            value={comuna}
+            placeholder="Selecciona una comuna"
+            onPress={() => setPicker('comuna')}
           />
+
+          <Text style={styles.fieldLabel}>Comunas de operación</Text>
+          {comunasOperacion.length > 0 && (
+            <View style={styles.chipsRow}>
+              {comunasOperacion.map((c) => (
+                <View key={c} style={styles.chip}>
+                  <Text style={styles.chipText}>{c}</Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setComunasOperacion((prev) => prev.filter((x) => x !== c))
+                    }
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close-circle" size={14} color={COLORS.gray} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setPicker('comunasOp')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add-circle-outline" size={16} color={COLORS.primary} />
+            <Text style={[styles.dropdownText, { color: COLORS.primary, marginLeft: 6 }]}>
+              {comunasOperacion.length === 0
+                ? 'Agregar comunas'
+                : 'Modificar selección'}
+            </Text>
+          </TouchableOpacity>
+
           <Field
             label="Descripción"
             value={descripcion}
             onChangeText={setDescripcion}
             multiline
-            placeholder="Misión de la fundación, animales que atiende..."
+            placeholder="Misión, animales que atiende..."
           />
-          <Field
-            label="Teléfono"
-            value={telefono}
-            onChangeText={setTelefono}
-            keyboardType="phone-pad"
-            placeholder="+56 9 ..."
-          />
-          <Field
-            label="Horario"
-            value={horario}
-            onChangeText={setHorario}
-            placeholder="Lun a Vie 10:00 - 18:00"
-          />
+
+          <Text style={styles.fieldLabel}>Teléfono</Text>
+          <View style={styles.phoneRow}>
+            <View style={styles.phonePrefix}>
+              <Text style={styles.phonePrefixText}>+56</Text>
+            </View>
+            <TextInput
+              value={formatPhoneDisplay(telefonoDigits)}
+              onChangeText={(t) => setTelefonoDigits(formatPhoneDigits(t))}
+              style={[styles.input, { flex: 1 }]}
+              keyboardType="phone-pad"
+              placeholder="9 1234 5678"
+              placeholderTextColor={COLORS.gray}
+              maxLength={12}
+            />
+          </View>
+          {telefonoError && <Text style={styles.fieldError}>{telefonoError}</Text>}
+
+          <Text style={styles.fieldLabel}>Horario de atención</Text>
+          <View style={styles.horarioRow}>
+            <View style={styles.horarioCol}>
+              <DropdownTrigger
+                value={dayFrom}
+                placeholder="Día"
+                onPress={() => setPicker('dayFrom')}
+                compact
+              />
+            </View>
+            <Text style={styles.horarioSeparator}>a</Text>
+            <View style={styles.horarioCol}>
+              <DropdownTrigger
+                value={dayTo}
+                placeholder="Día"
+                onPress={() => setPicker('dayTo')}
+                compact
+              />
+            </View>
+          </View>
+          <View style={styles.horarioRow}>
+            <View style={styles.horarioCol}>
+              <TextInput
+                value={timeFrom}
+                onChangeText={(t) => setTimeFrom(formatTime(t))}
+                style={[
+                  styles.input,
+                  styles.timeInput,
+                  timeFromError && styles.inputError,
+                ]}
+                keyboardType="numeric"
+                placeholder="HH:MM"
+                placeholderTextColor={COLORS.gray}
+                maxLength={5}
+              />
+            </View>
+            <Text style={styles.horarioSeparator}>—</Text>
+            <View style={styles.horarioCol}>
+              <TextInput
+                value={timeTo}
+                onChangeText={(t) => setTimeTo(formatTime(t))}
+                style={[
+                  styles.input,
+                  styles.timeInput,
+                  timeToError && styles.inputError,
+                ]}
+                keyboardType="numeric"
+                placeholder="HH:MM"
+                placeholderTextColor={COLORS.gray}
+                maxLength={5}
+              />
+            </View>
+          </View>
+          {(timeFromError || timeToError) && (
+            <Text style={styles.fieldError}>
+              {timeFromError || timeToError}
+            </Text>
+          )}
 
           <Text style={styles.sectionTitle}>Datos bancarios</Text>
           <Field label="Banco" value={bancoNombre} onChangeText={setBancoNombre} />
@@ -254,20 +450,111 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
             label="Número de cuenta"
             value={bancoNumero}
             onChangeText={setBancoNumero}
+            keyboardType="default"
           />
           <Field
-            label="RUT"
+            label="RUT de la fundación"
             value={bancoRut}
-            onChangeText={setBancoRut}
+            onChangeText={(t) => setBancoRut(formatRut(t))}
             placeholder="76.123.456-7"
+            autoCapitalize="characters"
+            error={rutError}
+            maxLength={12}
           />
         </>
       )}
 
-      <TouchableOpacity style={styles.primaryBtn} onPress={handle} activeOpacity={0.85}>
-        <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.white} />
-        <Text style={styles.primaryBtnText}>Crear cuenta</Text>
-      </TouchableOpacity>
+      <PrimaryButton
+        onPress={handle}
+        disabled={!canSubmit}
+        icon="checkmark-circle-outline"
+        label="Crear cuenta"
+      />
+
+      <OptionsPickerModal
+        visible={picker === 'comuna'}
+        title="Comuna sede"
+        options={COMUNAS_SANTIAGO}
+        value={comuna}
+        searchable
+        onCancel={() => setPicker(null)}
+        onConfirm={(v) => {
+          setComuna(v);
+          setPicker(null);
+        }}
+      />
+      <OptionsPickerModal
+        visible={picker === 'comunasOp'}
+        title="Comunas de operación"
+        options={COMUNAS_SANTIAGO}
+        value={comunasOperacion}
+        multiSelect
+        searchable
+        onCancel={() => setPicker(null)}
+        onConfirm={(v) => {
+          setComunasOperacion(v);
+          setPicker(null);
+        }}
+      />
+      <OptionsPickerModal
+        visible={picker === 'dayFrom'}
+        title="Día desde"
+        options={DIAS}
+        value={dayFrom}
+        onCancel={() => setPicker(null)}
+        onConfirm={(v) => {
+          setDayFrom(v);
+          setPicker(null);
+        }}
+      />
+      <OptionsPickerModal
+        visible={picker === 'dayTo'}
+        title="Día hasta"
+        options={DIAS}
+        value={dayTo}
+        onCancel={() => setPicker(null)}
+        onConfirm={(v) => {
+          setDayTo(v);
+          setPicker(null);
+        }}
+      />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Subcomponentes UI
+// ---------------------------------------------------------------------------
+function PasswordRequirements({ checks }) {
+  return (
+    <View style={styles.requirementsBox}>
+      <Text style={styles.requirementsTitle}>Tu contraseña debe tener:</Text>
+      {checks.map((c) => (
+        <View key={c.id} style={styles.requirementRow}>
+          <Ionicons
+            name={c.ok ? 'checkmark-circle' : 'ellipse-outline'}
+            size={14}
+            color={c.ok ? COLORS.healthy : COLORS.gray}
+          />
+          <Text
+            style={[
+              styles.requirementText,
+              c.ok && { color: COLORS.healthy, fontWeight: '600' },
+            ]}
+          >
+            {c.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ErrorBanner({ message }) {
+  return (
+    <View style={styles.errorBanner}>
+      <Ionicons name="alert-circle" size={18} color={COLORS.urgent} />
+      <Text style={styles.errorBannerText}>{message}</Text>
     </View>
   );
 }
@@ -291,17 +578,59 @@ function RoleChip({ active, onPress, icon, label }) {
   );
 }
 
-function Field({ label, multiline, ...rest }) {
+function Field({ label, multiline, error, ...rest }) {
   return (
     <>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
+        style={[
+          styles.input,
+          multiline && styles.inputMultiline,
+          error && styles.inputError,
+        ]}
         multiline={multiline}
         placeholderTextColor={COLORS.gray}
         {...rest}
       />
+      {!!error && <Text style={styles.fieldError}>{error}</Text>}
     </>
+  );
+}
+
+function DropdownTrigger({ label, value, placeholder, onPress, compact }) {
+  return (
+    <>
+      {!!label && <Text style={styles.fieldLabel}>{label}</Text>}
+      <TouchableOpacity
+        style={[styles.dropdown, compact && styles.dropdownCompact]}
+        onPress={onPress}
+        activeOpacity={0.85}
+      >
+        <Text
+          style={[
+            styles.dropdownText,
+            !value && { color: COLORS.gray },
+          ]}
+        >
+          {value || placeholder}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={COLORS.gray} />
+      </TouchableOpacity>
+    </>
+  );
+}
+
+function PrimaryButton({ onPress, disabled, icon, label }) {
+  return (
+    <TouchableOpacity
+      style={[styles.primaryBtn, disabled && styles.primaryBtnDisabled]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      disabled={disabled}
+    >
+      <Ionicons name={icon} size={18} color={COLORS.white} />
+      <Text style={styles.primaryBtnText}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -354,11 +683,7 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
   tabTextActive: { color: COLORS.white },
 
-  card: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    padding: 16,
-  },
+  card: { backgroundColor: COLORS.white, borderRadius: 14, padding: 16 },
 
   fieldLabel: {
     fontSize: 11,
@@ -379,6 +704,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
+  inputError: { borderColor: COLORS.urgent },
+  fieldError: {
+    fontSize: 11,
+    color: COLORS.urgent,
+    marginTop: 4,
+    fontWeight: '600',
+  },
 
   roleRow: { flexDirection: 'row', marginTop: 4 },
   roleChip: {
@@ -404,7 +736,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.text,
-    marginTop: 14,
+    marginTop: 18,
     marginBottom: 2,
   },
 
@@ -417,6 +749,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 18,
   },
+  primaryBtnDisabled: { backgroundColor: COLORS.gray, opacity: 0.6 },
   primaryBtnText: {
     color: COLORS.white,
     fontWeight: 'bold',
@@ -438,4 +771,98 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   demoLine: { fontSize: 12, color: COLORS.text, marginBottom: 2 },
+
+  // Password requirements
+  requirementsBox: {
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+  },
+  requirementsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.gray,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  requirementRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  requirementText: { fontSize: 12, color: COLORS.gray, marginLeft: 6 },
+
+  // Error banner
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FDECEE',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.urgent,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    fontSize: 12,
+    color: COLORS.urgent,
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 16,
+  },
+
+  // Dropdown trigger
+  dropdown: {
+    borderWidth: 1,
+    borderColor: COLORS.lightGray,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.white,
+  },
+  dropdownCompact: { paddingVertical: 8 },
+  dropdownText: { fontSize: 13, color: COLORS.text },
+
+  // Chips (comunas operación seleccionadas)
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  chipText: { fontSize: 12, color: COLORS.text, marginRight: 6 },
+
+  // Phone
+  phoneRow: { flexDirection: 'row', alignItems: 'stretch' },
+  phonePrefix: {
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderWidth: 1,
+    borderRightWidth: 0,
+    borderColor: COLORS.lightGray,
+  },
+  phonePrefixText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+
+  // Horario rows
+  horarioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  horarioCol: { flex: 1 },
+  horarioSeparator: {
+    paddingHorizontal: 8,
+    color: COLORS.gray,
+    fontWeight: '700',
+  },
+  timeInput: { textAlign: 'center' },
 });
