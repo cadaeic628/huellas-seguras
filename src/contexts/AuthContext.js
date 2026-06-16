@@ -4,7 +4,7 @@ import { ORGANIZACIONES, USUARIOS_DEMO } from '../data/mockData';
 // Auth mockeada: vive solo en memoria. Al recargar la app, vuelve al estado
 // deslogueado y los usuarios creados durante la sesión se pierden, igual que el
 // resto de la data (ver convención en CLAUDE.md). Cuando se migre a Supabase
-// (Roadmap §4) esta lógica se reemplaza por llamadas al cliente.
+// (Roadmap §1) esta lógica se reemplaza por llamadas al cliente.
 
 const AuthContext = createContext(null);
 
@@ -105,9 +105,51 @@ export function AuthProvider({ children }) {
 
   const logout = () => setUser(null);
 
+  const editarPerfil = ({ nombre }) => {
+    if (!user) return { ok: false, error: 'No hay sesión activa.' };
+    const nuevoNombre = nombre.trim();
+    if (!nuevoNombre) return { ok: false, error: 'El nombre no puede estar vacío.' };
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, nombre: nuevoNombre } : u))
+    );
+    setUser((prev) => ({ ...prev, nombre: nuevoNombre }));
+    return { ok: true };
+  };
+
+  const editarOrganizacion = (updates) => {
+    if (user?.role !== 'fundacion') {
+      return { ok: false, error: 'Solo las fundaciones pueden editar su ficha.' };
+    }
+    const idx = ORGANIZACIONES.findIndex((o) => o.id === user.organizacionId);
+    if (idx === -1) {
+      return { ok: false, error: 'No encontramos tu organización.' };
+    }
+    // Mutación directa del arreglo (mismo patrón que signupFundacion). Forzamos
+    // el re-render con un setUser idempotente para que la UI tome los cambios.
+    ORGANIZACIONES[idx] = { ...ORGANIZACIONES[idx], ...updates };
+    setUser((prev) => ({ ...prev }));
+    return { ok: true };
+  };
+
+  const eliminarCuenta = () => {
+    if (!user) return { ok: false, error: 'No hay sesión activa.' };
+    setUsers((prev) => prev.filter((u) => u.id !== user.id));
+    setUser(null);
+    return { ok: true };
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, login, logout, signupNormal, signupFundacion }}
+      value={{
+        user,
+        login,
+        logout,
+        signupNormal,
+        signupFundacion,
+        editarPerfil,
+        editarOrganizacion,
+        eliminarCuenta,
+      }}
     >
       {children}
     </AuthContext.Provider>
