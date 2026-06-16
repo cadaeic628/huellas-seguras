@@ -36,6 +36,15 @@ qué fundación está autenticada. Solo se usa para limitar el multi-select de a
 en el formulario de publicación. Cuando se implemente auth real (ver Roadmap §1), ese
 selector se reemplaza por el rol del usuario logueado.
 
+## Veterinarias
+
+Las veterinarias **no son usuarios de esta app**. Son entidades públicas que aparecen
+en el mapa (y en la ficha de cada animal, vía `getVeterinariaCercana`). Sus datos
+viven en `VETERINARIAS` de `mockData.js` (o en la tabla `veterinarias` cuando exista
+DB) y los administra el equipo del proyecto, no un usuario logueado. A futuro existirá
+una plataforma separada para veterinarias; este repo no debe agregar registro ni
+login para ese rol.
+
 ## Trabajar con esta base
 
 - Antes de tocar una pantalla, lee la pantalla análoga existente y respeta su patrón
@@ -53,20 +62,20 @@ Las secciones siguientes son **briefings autocontenidos** para que una sesión n
 pueda implementar cada feature sin más contexto. Implementar **una a la vez** en
 commits atómicos.
 
-## 1. Auth real: login, signup, logout, 3 tipos de usuario
+## 1. Auth real: login, signup, logout, 2 tipos de usuario
 
-**Tipos**: `normal`, `veterinaria`, `fundacion`.
+**Tipos**: `normal`, `fundacion`. (Las veterinarias no se registran — ver sección
+"Veterinarias" arriba).
 
 **UX esperado**:
 - Al abrir la app sin sesión, mostrar pantalla de login (con tabs Login / Crear cuenta).
-- En signup pedir tipo de cuenta. Si es `veterinaria` o `fundacion`, pedir datos extra
-  (nombre de la organización, comuna, descripción) y crear su registro en
-  `ORGANIZACIONES` o `VETERINARIAS` automáticamente.
+- En signup pedir tipo de cuenta. Si es `fundacion`, pedir datos extra (nombre,
+  comuna, descripción, comunas de operación, datos bancarios, redes) y crear su
+  registro en `ORGANIZACIONES` automáticamente.
 - Botón "Cerrar sesión" en el tab "Mi perfil" (§3).
 - El rol del usuario condiciona qué puede hacer:
   - `fundacion` → único que puede publicar en el Foro (eliminar el selector
     placeholder de `ForoScreen.js`).
-  - `veterinaria` → puede marcar atenciones (futuro).
   - `normal` → reportar animales, donar, ver foro, apadrinar.
 
 **Implementación recomendada**: Supabase Auth (ver §4). Mientras tanto, si se quiere
@@ -81,6 +90,10 @@ mockear sin DB: un `AuthContext` con `useState` + `AsyncStorage` que guarda
   `organizacionId`. Mostrar el FAB de publicar solo si rol es `fundacion`.
 
 ## 2. Redes sociales en fundaciones y veterinarias
+
+Las fundaciones pueden editar sus redes desde "Mi perfil" (§3). Las redes de las
+veterinarias quedan precargadas en `mockData.js` (o en la tabla `veterinarias`) y
+no son editables desde la app — se ven solo como información pública.
 
 Agregar a cada item de `ORGANIZACIONES` y `VETERINARIAS` un objeto opcional:
 
@@ -97,9 +110,10 @@ redes: {
 - En la tarjeta de Donar mostrar una fila de íconos clickeables (Ionicons:
   `logo-instagram`, `logo-facebook`, `logo-whatsapp`, `globe-outline`) bajo el
   header de la organización.
+- En el callout / ficha de cada veterinaria del mapa mostrar la misma fila.
 - Toque → `Linking.openURL` con la URL correspondiente (`https://instagram.com/{handle}`,
   `https://wa.me/{phone}`, etc.).
-- Si la fundación no tiene redes, no mostrar la fila.
+- Si la entidad no tiene redes, no mostrar la fila.
 
 **Extensión opcional**: badge "Es un donante" en la tarjeta de Donar cuando el usuario
 logueado ya haya hecho aportes a esa fundación. Requiere persistir el historial de
@@ -118,13 +132,6 @@ como tab, el bottom bar pasa a 6 íconos: revisar tamaños en `App.js`.
 - Animales que reportó (lista con fecha + estado).
 - Historial de aportes (fecha + organización + monto).
 - Botones: Editar datos, Cerrar sesión, Eliminar cuenta.
-
-**Veterinaria**:
-- Mismo header.
-- Tarjeta editable con los datos públicos de la veterinaria (los que ve el resto
-  en el mapa): nombre, comuna, dirección, horario, teléfono, redes.
-- Próximamente: registro de atenciones realizadas a animales del catálogo.
-- Cerrar sesión.
 
 **Fundación**:
 - Mismo header.
@@ -150,12 +157,13 @@ control, más trabajo).
 
 ```
 users            (id, email, role, nombre, avatar_url, created_at)
-                 — role: 'normal' | 'veterinaria' | 'fundacion'
+                 — role: 'normal' | 'fundacion'
 organizaciones   (id, nombre, comuna, descripcion, telefono, horario,
                   comunas_operacion[], banco_jsonb, redes_jsonb,
                   user_id FK users)  -- la cuenta que la administra
 veterinarias     (id, nombre, comuna, telefono, horario, lat, lng,
-                  redes_jsonb, user_id FK users)
+                  redes_jsonb)
+                 -- entidad pública sin user_id; se administra fuera de la app
 animales         (id, nombre, tipo, estado, zona, comuna, descripcion,
                   foto_url, organizacion_id FK, lat, lng,
                   apadrinado_por FK users NULL,
