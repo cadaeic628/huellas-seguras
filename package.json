@@ -13,7 +13,7 @@
     "@expo/vector-icons": "14.0.4",
     "@react-navigation/bottom-tabs": "^6.5.11",
     "@react-navigation/native": "^6.1.9",
-    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/supabase-js": "2.45.6",
     "expo": "~50.0.0",
     "expo-constants": "~15.4.5",
     "expo-font": "11.10.3",
