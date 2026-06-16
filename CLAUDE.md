@@ -128,10 +128,13 @@ seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
   `FichaAnimalModal` acepta `org` como prop con fallback a
   `getOrganizacionDeAnimal` de `mockData` para no romper Mapa/Perfil
   mientras siguen pendientes. Seed inicial en `supabase/seed.sql`.
+- [x] `feat(donar): load orgs from supabase` — `DonarScreen.js` lee
+  `organizaciones` con join `animales(id, nombre, estado, zona)` para los
+  stats del card. El modal de datos bancarios estrena un formulario
+  "Registra tu aporte" que inserta en `donaciones` con `user_id` del
+  donante (RLS `donaciones_insert_self`).
 
 **Pendiente** (orden sugerido):
-- [ ] `feat(donar): load orgs from supabase` — `DonarScreen.js`. Persistir
-  donaciones en la tabla `donaciones` con el `user_id` del que dona.
 - [ ] `feat(foro): load posts + publishing + storage uploads` — `ForoScreen.js`.
   Lectura de `foro_posts` con sus `foro_post_animales`. El `PublishModal` sube
   foto/boleta al bucket `foro` antes de insertar el row. Este commit estrena
