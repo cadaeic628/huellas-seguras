@@ -106,10 +106,14 @@ function LoginForm({ onSubmit }) {
 
   const canSubmit = isValidEmail(email) && password.length > 0;
 
-  const handle = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handle = async () => {
     setAuthError(null);
-    if (!canSubmit) return;
-    const res = onSubmit(email, password);
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    const res = await onSubmit(email, password);
+    setSubmitting(false);
     if (!res.ok) setAuthError(res.error || 'No se pudo iniciar sesión.');
   };
 
@@ -148,17 +152,10 @@ function LoginForm({ onSubmit }) {
 
       <PrimaryButton
         onPress={handle}
-        disabled={!canSubmit}
+        disabled={!canSubmit || submitting}
         icon="log-in-outline"
-        label="Entrar"
+        label={submitting ? 'Entrando...' : 'Entrar'}
       />
-
-      <View style={styles.demoBox}>
-        <Text style={styles.demoTitle}>Cuentas de prueba</Text>
-        <Text style={styles.demoLine}>· maria@example.com / demo123 (usuaria)</Text>
-        <Text style={styles.demoLine}>· refugio@example.com / demo123 (fundación)</Text>
-        <Text style={styles.demoLine}>· huellitas@example.com / demo123 (fundación)</Text>
-      </View>
     </View>
   );
 }
@@ -236,12 +233,16 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
 
   const canSubmit = role === 'normal' ? baseOk : baseOk && fundacionOk;
 
-  const handle = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handle = async () => {
     setAuthError(null);
-    if (!canSubmit) return;
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
 
     if (role === 'normal') {
-      const res = onSignupNormal({ email, password, nombre });
+      const res = await onSignupNormal({ email, password, nombre });
+      setSubmitting(false);
       if (!res.ok) setAuthError(res.error);
       return;
     }
@@ -249,7 +250,7 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
     const horario = `${dayFrom} a ${dayTo} ${timeFrom} - ${timeTo}`;
     const telefono = `+56 ${formatPhoneDisplay(telefonoDigits)}`;
 
-    const res = onSignupFundacion({
+    const res = await onSignupFundacion({
       email,
       password,
       nombre,
@@ -267,6 +268,7 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
         email: email.trim(),
       },
     });
+    setSubmitting(false);
     if (!res.ok) setAuthError(res.error);
   };
 
@@ -473,9 +475,9 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
 
       <PrimaryButton
         onPress={handle}
-        disabled={!canSubmit}
+        disabled={!canSubmit || submitting}
         icon="checkmark-circle-outline"
-        label="Crear cuenta"
+        label={submitting ? 'Creando cuenta...' : 'Crear cuenta'}
       />
 
       <OptionsPickerModal
@@ -767,21 +769,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 6,
   },
-
-  demoBox: {
-    marginTop: 16,
-    padding: 10,
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-  },
-  demoTitle: {
-    fontSize: 11,
-    color: COLORS.gray,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  demoLine: { fontSize: 12, color: COLORS.text, marginBottom: 2 },
 
   // Password requirements
   requirementsBox: {

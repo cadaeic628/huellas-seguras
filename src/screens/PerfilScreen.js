@@ -109,7 +109,10 @@ function PerfilNormal() {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => eliminarCuenta(),
+          onPress: async () => {
+            const res = await eliminarCuenta();
+            if (!res.ok) Alert.alert('No se pudo eliminar', res.error);
+          },
         },
       ]
     );
@@ -211,8 +214,8 @@ function PerfilNormal() {
         visible={editOpen}
         nombreActual={user.nombre}
         onCancel={() => setEditOpen(false)}
-        onSave={(nombre) => {
-          const res = editarPerfil({ nombre });
+        onSave={async (nombre) => {
+          const res = await editarPerfil({ nombre });
           if (!res.ok) {
             Alert.alert('No se pudo guardar', res.error);
             return;
@@ -500,7 +503,7 @@ function EditarOrganizacionModal({ visible, org, onCancel, onClose }) {
     setWeb(org.redes?.web || '');
   }, [visible, org]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!descripcion.trim() || !telefono.trim() || !horario.trim()) {
       Alert.alert('Faltan datos', 'Descripción, teléfono y horario son obligatorios.');
       return;
@@ -518,7 +521,7 @@ function EditarOrganizacionModal({ visible, org, onCancel, onClose }) {
       ...(Object.keys(redes).length > 0 ? { redes } : { redes: undefined }),
     };
 
-    const res = editarOrganizacion(updates);
+    const res = await editarOrganizacion(updates);
     if (!res.ok) {
       Alert.alert('No se pudo guardar', res.error);
       return;

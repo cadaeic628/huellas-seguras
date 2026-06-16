@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   StyleSheet,
@@ -183,7 +184,14 @@ function MainNavigator() {
 }
 
 function RootGate() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator color={COLORS.white} size="large" />
+      </View>
+    );
+  }
   if (!user) return <AuthScreen />;
   return <MainNavigator />;
 }
@@ -200,6 +208,12 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   tabBar: {
     backgroundColor: COLORS.white,
     borderTopWidth: 1,

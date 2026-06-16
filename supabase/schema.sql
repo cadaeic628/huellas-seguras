@@ -413,3 +413,20 @@ begin
   update public.animales set adoptado_por = auth.uid() where id = animal;
 end;
 $$;
+
+-- Permite al usuario autenticado borrar su propia cuenta. El cliente con anon
+-- key no puede tocar auth.users, así que exponemos esto como RPC. El cascade
+-- de public.users -> organizaciones / animales / etc. limpia el resto.
+create or replace function public.delete_self()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
