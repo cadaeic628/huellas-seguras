@@ -10,6 +10,7 @@ import AnimalesScreen from './src/screens/AnimalesScreen';
 import ReportarScreen from './src/screens/ReportarScreen';
 import DonarScreen from './src/screens/DonarScreen';
 import ForoScreen from './src/screens/ForoScreen';
+import PerfilScreen from './src/screens/PerfilScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { COLORS } from './src/constants/colors';
@@ -22,6 +23,7 @@ const TAB_ICONS = {
   Reportar: 'camera',
   Donar: 'heart',
   Foro: 'chatbubbles',
+  Perfil: 'person',
 };
 
 // Botón circular elevado para la pestaña central (Reportar).
@@ -45,22 +47,6 @@ function CenterTabButton({ children, onPress, accessibilityState }) {
   );
 }
 
-// Botón temporal de cerrar sesión en el header. Cuando se implemente el tab
-// "Mi perfil" (Roadmap §3) se mueve allí y se quita de aquí.
-function HeaderLogoutButton() {
-  const { logout } = useAuth();
-  return (
-    <TouchableOpacity
-      onPress={logout}
-      style={styles.logoutBtn}
-      hitSlop={10}
-      activeOpacity={0.7}
-    >
-      <Ionicons name="log-out-outline" size={22} color={COLORS.white} />
-    </TouchableOpacity>
-  );
-}
-
 function MainNavigator() {
   return (
     <Tab.Navigator
@@ -68,7 +54,6 @@ function MainNavigator() {
         headerStyle: { backgroundColor: COLORS.primary },
         headerTintColor: COLORS.white,
         headerTitleStyle: { fontWeight: 'bold' },
-        headerRight: () => <HeaderLogoutButton />,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
         tabBarShowLabel: false,
@@ -77,12 +62,12 @@ function MainNavigator() {
         tabBarIcon: ({ color, focused }) => {
           const iconName = TAB_ICONS[route.name];
           if (route.name === 'Reportar') {
-            return <Ionicons name={iconName} size={26} color={COLORS.white} />;
+            return <Ionicons name={iconName} size={24} color={COLORS.white} />;
           }
           return (
             <Ionicons
               name={focused ? iconName : `${iconName}-outline`}
-              size={26}
+              size={24}
               color={color}
             />
           );
@@ -116,6 +101,11 @@ function MainNavigator() {
         name="Foro"
         component={ForoScreen}
         options={{ title: 'Foro de fundaciones' }}
+      />
+      <Tab.Screen
+        name="Perfil"
+        component={PerfilScreen}
+        options={{ title: 'Mi perfil' }}
       />
     </Tab.Navigator>
   );
@@ -155,9 +145,9 @@ const styles = StyleSheet.create({
     top: -18,
   },
   centerButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -170,10 +160,4 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   centerButtonFocused: { backgroundColor: COLORS.accent },
-  logoutBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
 });
