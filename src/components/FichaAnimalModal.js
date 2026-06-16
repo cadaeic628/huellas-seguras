@@ -51,12 +51,15 @@ function DataRow({ icon, label, value }) {
   );
 }
 
-export default function FichaAnimalModal({ animal, visible, onClose }) {
+export default function FichaAnimalModal({ animal, org: orgProp, visible, onClose }) {
   const [imgError, setImgError] = useState(false);
 
   if (!animal) return null;
   const ficha = animal.ficha || {};
-  const org = getOrganizacionDeAnimal(animal);
+  // Pantallas ya migradas a Supabase pasan org como prop (viene del join).
+  // El fallback al helper de mockData mantiene compat con MapaScreen y
+  // PerfilScreen mientras no se migren (ver Roadmap §1).
+  const org = orgProp ?? getOrganizacionDeAnimal(animal);
 
   return (
     <Modal

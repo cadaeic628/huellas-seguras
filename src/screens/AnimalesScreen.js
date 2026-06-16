@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,12 @@ import {
   TouchableOpacity,
   Image,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import {
-  ANIMALS,
-  getEstadoLabel,
-  getEstadoColor,
-  getOrganizacionDeAnimal,
-} from '../data/mockData';
+import { supabase } from '../lib/supabase';
+import { getEstadoLabel, getEstadoColor } from '../data/mockData';
 import FichaAnimalModal from '../components/FichaAnimalModal';
 
 const FILTROS = [
@@ -27,9 +24,46 @@ const FILTROS = [
   { key: 'adoptados', label: 'Adoptados' },
 ];
 
+// Convierte una row de `animales` (con join a `organizaciones`) al shape
+// camelCase que usan las cards y el FichaAnimalModal. Los booleans
+// apadrinado/adoptado se derivan de las columnas *_por.
+function mapAnimalRow(row) {
+  const orgRow = row.organizaciones;
+  const org = orgRow
+    ? {
+        id: orgRow.id,
+        nombre: orgRow.nombre,
+        comuna: orgRow.comuna,
+        comunasOperacion: orgRow.comunas_operacion ?? [],
+        descripcion: orgRow.descripcion,
+        telefono: orgRow.telefono,
+        horario: orgRow.horario,
+        banco: orgRow.banco,
+        redes: orgRow.redes,
+      }
+    : null;
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    tipo: row.tipo,
+    estado: row.estado,
+    zona: row.zona,
+    comuna: row.comuna,
+    descripcion: row.descripcion,
+    foto: row.foto_url,
+    organizacionId: row.organizacion_id,
+    lat: row.lat,
+    lng: row.lng,
+    apadrinado: row.apadrinado_por != null,
+    adoptado: row.adoptado_por != null,
+    ficha: row.ficha ?? {},
+    org,
+  };
+}
+
 function AnimalCard({ animal, onAccion, onVerFicha }) {
   const [imgError, setImgError] = useState(false);
-  const org = getOrganizacionDeAnimal(animal);
+  const org = animal.org;
   return (
     <View style={styles.card}>
       <TouchableOpacity activeOpacity={0.85} onPress={() => onVerFicha(animal)}>
@@ -49,7 +83,6 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
       <View style={styles.cardBody}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardName}>{animal.nombre}</Text>
-          <Text style={styles.cardId}>{animal.id}</Text>
         </View>
         <View
           style={[
@@ -65,12 +98,14 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
             {animal.zona} ({animal.comuna})
           </Text>
         </View>
-        <View style={styles.orgRow}>
-          <Ionicons name="business-outline" size={14} color={COLORS.primary} />
-          <Text style={styles.orgText} numberOfLines={1}>
-            A cargo de <Text style={styles.orgTextBold}>{org.nombre}</Text>
-          </Text>
-        </View>
+        {org && (
+          <View style={styles.orgRow}>
+            <Ionicons name="business-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.orgText} numberOfLines={1}>
+              A cargo de <Text style={styles.orgTextBold}>{org.nombre}</Text>
+            </Text>
+          </View>
+        )}
         {(animal.apadrinado || animal.adoptado) && (
           <View style={styles.tagsRow}>
             {animal.apadrinado && (
@@ -115,20 +150,81 @@ export default function AnimalesScreen() {
   const [filtro, setFiltro] = useState('todos');
   const [modalData, setModalData] = useState(null);
   const [fichaAnimal, setFichaAnimal] = useState(null);
+  const [animales, setAnimales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error: fetchError } = await supabase
+        .from('animales')
+        .select('*, organizaciones(*)')
+        .order('created_at', { ascending: false });
+      if (!mounted) return;
+      if (fetchError) {
+        setError(fetchError.message);
+      } else {
+        setAnimales((data ?? []).map(mapAnimalRow));
+      }
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filtrarAnimales = () => {
-    if (filtro === 'todos') return ANIMALS;
-    if (filtro === 'apadrinados') return ANIMALS.filter((a) => a.apadrinado);
-    if (filtro === 'adoptados') return ANIMALS.filter((a) => a.adoptado);
-    return ANIMALS.filter((a) => a.estado === filtro);
+    if (filtro === 'todos') return animales;
+    if (filtro === 'apadrinados') return animales.filter((a) => a.apadrinado);
+    if (filtro === 'adoptados') return animales.filter((a) => a.adoptado);
+    return animales.filter((a) => a.estado === filtro);
   };
 
   const abrirModal = (animal, accion) => {
-    const org = getOrganizacionDeAnimal(animal);
-    setModalData({ animal, accion, org });
+    setActionError(null);
+    setModalData({ animal, accion, org: animal.org });
+  };
+
+  const cerrarModal = () => {
+    if (submitting) return;
+    setModalData(null);
+    setActionError(null);
+  };
+
+  const confirmarAccion = async () => {
+    if (!modalData) return;
+    setSubmitting(true);
+    setActionError(null);
+    const rpcName = modalData.accion === 'adoptar' ? 'adoptar' : 'apadrinar';
+    const { error: rpcError } = await supabase.rpc(rpcName, {
+      animal: modalData.animal.id,
+    });
+    setSubmitting(false);
+    if (rpcError) {
+      setActionError(rpcError.message);
+      return;
+    }
+    const field = modalData.accion === 'adoptar' ? 'adoptado' : 'apadrinado';
+    setAnimales((prev) =>
+      prev.map((a) =>
+        a.id === modalData.animal.id ? { ...a, [field]: true } : a
+      )
+    );
+    setModalData(null);
   };
 
   const animalesMostrados = filtrarAnimales();
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -161,6 +257,15 @@ export default function AnimalesScreen() {
         </ScrollView>
       </View>
 
+      {error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={16} color={COLORS.white} />
+          <Text style={styles.errorBannerText}>
+            No pudimos cargar el catálogo: {error}
+          </Text>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={styles.lista}>
         {animalesMostrados.length === 0 ? (
           <View style={styles.emptyState}>
@@ -185,12 +290,12 @@ export default function AnimalesScreen() {
         transparent
         visible={!!modalData}
         animationType="fade"
-        onRequestClose={() => setModalData(null)}
+        onRequestClose={cerrarModal}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalData(null)}
+          onPress={cerrarModal}
         >
           <View
             style={styles.modalCard}
@@ -206,42 +311,66 @@ export default function AnimalesScreen() {
                 <Text style={styles.modalSub}>
                   Estos son los datos de la organización a cargo:
                 </Text>
-                <View style={styles.modalOrgBox}>
-                  <Text style={styles.modalOrgName}>
-                    {modalData.org.nombre}
-                  </Text>
-                  <View style={styles.modalInfoRow}>
-                    <Ionicons
-                      name="location"
-                      size={16}
-                      color={COLORS.primary}
-                    />
-                    <Text style={styles.modalInfoText}>
-                      {modalData.org.comuna}
+                {modalData.org && (
+                  <View style={styles.modalOrgBox}>
+                    <Text style={styles.modalOrgName}>
+                      {modalData.org.nombre}
                     </Text>
+                    <View style={styles.modalInfoRow}>
+                      <Ionicons
+                        name="location"
+                        size={16}
+                        color={COLORS.primary}
+                      />
+                      <Text style={styles.modalInfoText}>
+                        {modalData.org.comuna}
+                      </Text>
+                    </View>
+                    <View style={styles.modalInfoRow}>
+                      <Ionicons name="call" size={16} color={COLORS.primary} />
+                      <Text style={styles.modalInfoText}>
+                        {modalData.org.telefono}
+                      </Text>
+                    </View>
+                    <View style={styles.modalInfoRow}>
+                      <Ionicons name="time" size={16} color={COLORS.primary} />
+                      <Text style={styles.modalInfoText}>
+                        {modalData.org.horario}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.modalInfoRow}>
-                    <Ionicons name="call" size={16} color={COLORS.primary} />
-                    <Text style={styles.modalInfoText}>
-                      {modalData.org.telefono}
-                    </Text>
-                  </View>
-                  <View style={styles.modalInfoRow}>
-                    <Ionicons name="time" size={16} color={COLORS.primary} />
-                    <Text style={styles.modalInfoText}>
-                      {modalData.org.horario}
-                    </Text>
-                  </View>
-                </View>
+                )}
                 <Text style={styles.modalNota}>
                   Este animal se encuentra en la vía pública. La organización
                   puede orientarte sobre su historial y rutas habituales.
                 </Text>
+                {actionError && (
+                  <Text style={styles.modalError}>{actionError}</Text>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.confirmButton,
+                    submitting && styles.buttonDisabled,
+                  ]}
+                  onPress={confirmarAccion}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>
+                      {modalData.accion === 'adoptar'
+                        ? 'Confirmar adopción'
+                        : 'Confirmar apadrinamiento'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.closeButton}
-                  onPress={() => setModalData(null)}
+                  onPress={cerrarModal}
+                  disabled={submitting}
                 >
-                  <Text style={styles.closeButtonText}>Entendido</Text>
+                  <Text style={styles.closeButtonText}>Cerrar</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -251,6 +380,7 @@ export default function AnimalesScreen() {
 
       <FichaAnimalModal
         animal={fichaAnimal}
+        org={fichaAnimal?.org}
         visible={!!fichaAnimal}
         onClose={() => setFichaAnimal(null)}
       />
@@ -262,6 +392,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filtrosWrapper: {
     backgroundColor: COLORS.white,
@@ -289,6 +423,19 @@ const styles = StyleSheet.create({
   },
   filtroTextActivo: {
     color: COLORS.white,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  errorBannerText: {
+    color: COLORS.white,
+    fontSize: 12,
+    marginLeft: 6,
+    flex: 1,
   },
   lista: {
     padding: 12,
@@ -332,10 +479,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.text,
-  },
-  cardId: {
-    fontSize: 12,
-    color: COLORS.gray,
   },
   estadoBadge: {
     alignSelf: 'flex-start',
@@ -492,16 +635,36 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontStyle: 'italic',
   },
-  closeButton: {
+  modalError: {
+    color: '#E63946',
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  confirmButton: {
     backgroundColor: COLORS.primary,
     paddingVertical: 12,
     borderRadius: 25,
     marginTop: 16,
     alignItems: 'center',
   },
-  closeButtonText: {
+  confirmButtonText: {
     color: COLORS.white,
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  closeButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 10,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: COLORS.gray,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
