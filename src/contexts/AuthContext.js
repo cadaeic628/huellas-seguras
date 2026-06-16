@@ -29,7 +29,15 @@ export function AuthProvider({ children }) {
     const record = users.find(
       (u) => normalizeEmail(u.email) === normalizeEmail(email) && u.password === password
     );
-    if (!record) return { ok: false, error: 'Email o contraseña incorrectos.' };
+    if (!record) {
+      // Mensaje genérico (no decimos si fue el email o la contraseña) para no
+      // filtrar qué emails existen en el sistema.
+      return {
+        ok: false,
+        error:
+          'No encontramos una cuenta con ese email y contraseña. Revisa que estén bien escritos e intenta de nuevo.',
+      };
+    }
     setUser(sessionFromRecord(record));
     return { ok: true };
   };
