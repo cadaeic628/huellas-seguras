@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,13 @@ import {
   Modal,
   Platform,
   Alert,
+  ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import {
-  ORGANIZACIONES,
-  getAnimalesDeOrganizacion,
-} from '../data/mockData';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import RedesSocialesRow from '../components/RedesSocialesRow';
 
 function copyToClipboard(text) {
@@ -23,6 +23,35 @@ function copyToClipboard(text) {
     return true;
   }
   return false;
+}
+
+// Convierte una row de `organizaciones` con join a `animales(...)` al shape
+// camelCase que consume el resto del archivo. Los jsonb (`banco`, `redes`)
+// ya vienen como objetos JS desde supabase-js, así que se pasan tal cual.
+function mapOrgRow(row) {
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    comuna: row.comuna,
+    comunasOperacion: row.comunas_operacion ?? [],
+    descripcion: row.descripcion,
+    telefono: row.telefono,
+    horario: row.horario,
+    banco: row.banco ?? {},
+    redes: row.redes,
+    animales: (row.animales ?? []).map((a) => ({
+      id: a.id,
+      nombre: a.nombre,
+      estado: a.estado,
+      zona: a.zona,
+    })),
+  };
+}
+
+function formatMonto(value) {
+  const digits = String(value).replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 function BankRow({ label, value, copyable = true }) {
@@ -58,7 +87,81 @@ function BankRow({ label, value, copyable = true }) {
 }
 
 export default function DonarScreen() {
+  const { user } = useAuth();
+  const [orgs, setOrgs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [orgSeleccionada, setOrgSeleccionada] = useState(null);
+  const [montoInput, setMontoInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [donationError, setDonationError] = useState(null);
+  const [donationOk, setDonationOk] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error: fetchError } = await supabase
+        .from('organizaciones')
+        .select('*, animales(id, nombre, estado, zona)')
+        .order('created_at', { ascending: true });
+      if (!mounted) return;
+      if (fetchError) {
+        setError(fetchError.message);
+      } else {
+        setOrgs((data ?? []).map(mapOrgRow));
+      }
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const abrirOrg = (org) => {
+    setOrgSeleccionada(org);
+    setMontoInput('');
+    setDonationError(null);
+    setDonationOk(false);
+  };
+
+  const cerrarModal = () => {
+    if (submitting) return;
+    setOrgSeleccionada(null);
+    setMontoInput('');
+    setDonationError(null);
+    setDonationOk(false);
+  };
+
+  const registrarDonacion = async () => {
+    if (!orgSeleccionada || !user) return;
+    const monto = parseInt(montoInput.replace(/\D/g, ''), 10);
+    if (!monto || monto <= 0) {
+      setDonationError('Ingresa un monto válido en pesos.');
+      return;
+    }
+    setSubmitting(true);
+    setDonationError(null);
+    const { error: insertError } = await supabase.from('donaciones').insert({
+      user_id: user.id,
+      organizacion_id: orgSeleccionada.id,
+      monto,
+    });
+    setSubmitting(false);
+    if (insertError) {
+      setDonationError(insertError.message);
+      return;
+    }
+    setDonationOk(true);
+    setMontoInput('');
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -71,8 +174,17 @@ export default function DonarScreen() {
         </Text>
       </View>
 
-      {ORGANIZACIONES.map((org) => {
-        const animales = getAnimalesDeOrganizacion(org.id);
+      {error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={16} color={COLORS.white} />
+          <Text style={styles.errorBannerText}>
+            No pudimos cargar las organizaciones: {error}
+          </Text>
+        </View>
+      )}
+
+      {orgs.map((org) => {
+        const animales = org.animales;
         const urgentes = animales.filter((a) => a.estado === 'urgente').length;
         return (
           <View key={org.id} style={styles.card}>
@@ -142,7 +254,7 @@ export default function DonarScreen() {
 
             <TouchableOpacity
               style={styles.donarButton}
-              onPress={() => setOrgSeleccionada(org)}
+              onPress={() => abrirOrg(org)}
             >
               <Ionicons name="heart" size={18} color={COLORS.white} />
               <Text style={styles.donarButtonText}>Ir a donar</Text>
@@ -155,70 +267,123 @@ export default function DonarScreen() {
         Cada aporte ayuda a financiar alimento, esterilización y atención veterinaria.
       </Text>
 
-      {/* Modal de datos bancarios */}
+      {/* Modal de datos bancarios + registro de aporte */}
       <Modal
         transparent
         visible={!!orgSeleccionada}
         animationType="slide"
-        onRequestClose={() => setOrgSeleccionada(null)}
+        onRequestClose={cerrarModal}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            {orgSeleccionada && (
-              <>
-                <View style={styles.modalHeader}>
-                  <View style={styles.modalIconWrap}>
-                    <Ionicons name="heart" size={26} color={COLORS.white} />
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.modalCard}>
+              {orgSeleccionada && (
+                <>
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalIconWrap}>
+                      <Ionicons name="heart" size={26} color={COLORS.white} />
+                    </View>
+                    <Text style={styles.modalTitle}>Datos para donar</Text>
+                    <Text style={styles.modalOrgName}>{orgSeleccionada.nombre}</Text>
                   </View>
-                  <Text style={styles.modalTitle}>
-                    Datos para donar
-                  </Text>
-                  <Text style={styles.modalOrgName}>{orgSeleccionada.nombre}</Text>
-                </View>
 
-                <View style={styles.bankCard}>
-                  <BankRow label="Banco" value={orgSeleccionada.banco.banco} />
-                  <BankRow label="Tipo de cuenta" value={orgSeleccionada.banco.tipoCuenta} />
-                  <BankRow label="N° de cuenta" value={orgSeleccionada.banco.numero} />
-                  <BankRow label="RUT" value={orgSeleccionada.banco.rut} />
-                  <BankRow label="Titular" value={orgSeleccionada.banco.titular} copyable={false} />
-                  <BankRow label="Email comprobante" value={orgSeleccionada.banco.email} />
-                </View>
+                  <View style={styles.bankCard}>
+                    <BankRow label="Banco" value={orgSeleccionada.banco.banco} />
+                    <BankRow label="Tipo de cuenta" value={orgSeleccionada.banco.tipoCuenta} />
+                    <BankRow label="N° de cuenta" value={orgSeleccionada.banco.numero} />
+                    <BankRow label="RUT" value={orgSeleccionada.banco.rut} />
+                    <BankRow label="Titular" value={orgSeleccionada.banco.titular} copyable={false} />
+                    <BankRow label="Email comprobante" value={orgSeleccionada.banco.email} />
+                  </View>
 
-                <View style={styles.tipBox}>
-                  <Ionicons name="information-circle" size={16} color={COLORS.secondary} />
-                  <Text style={styles.tipText}>
-                    Envía el comprobante al email para que la organización pueda agradecerte
-                    y enviarte un reporte de uso de tu aporte.
-                  </Text>
-                </View>
+                  <View style={styles.tipBox}>
+                    <Ionicons name="information-circle" size={16} color={COLORS.secondary} />
+                    <Text style={styles.tipText}>
+                      Envía el comprobante al email para que la organización pueda agradecerte
+                      y enviarte un reporte de uso de tu aporte.
+                    </Text>
+                  </View>
 
-                <View style={styles.modalActions}>
-                  {Platform.OS === 'web' && (
+                  <View style={styles.registroBox}>
+                    <Text style={styles.registroTitle}>Registra tu aporte</Text>
+                    <Text style={styles.registroSubtitle}>
+                      Después de la transferencia, registra el monto para que aparezca en tu perfil.
+                    </Text>
+                    <View style={styles.montoInputWrap}>
+                      <Text style={styles.montoPrefix}>$</Text>
+                      <TextInput
+                        value={montoInput}
+                        onChangeText={(t) => setMontoInput(formatMonto(t))}
+                        placeholder="0"
+                        keyboardType="numeric"
+                        style={styles.montoInput}
+                        editable={!submitting && !donationOk}
+                      />
+                      <Text style={styles.montoSuffix}>CLP</Text>
+                    </View>
+                    {donationError && (
+                      <Text style={styles.donationError}>{donationError}</Text>
+                    )}
+                    {donationOk && (
+                      <View style={styles.donationOk}>
+                        <Ionicons name="checkmark-circle" size={16} color={COLORS.healthy} />
+                        <Text style={styles.donationOkText}>
+                          ¡Gracias! Tu aporte quedó registrado.
+                        </Text>
+                      </View>
+                    )}
+                    {!donationOk && (
+                      <TouchableOpacity
+                        style={[
+                          styles.registroButton,
+                          submitting && styles.buttonDisabled,
+                        ]}
+                        onPress={registrarDonacion}
+                        disabled={submitting}
+                      >
+                        {submitting ? (
+                          <ActivityIndicator color={COLORS.white} />
+                        ) : (
+                          <>
+                            <Ionicons name="checkmark" size={16} color={COLORS.white} />
+                            <Text style={styles.registroButtonText}>Confirmar aporte</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View style={styles.modalActions}>
+                    {Platform.OS === 'web' && (
+                      <TouchableOpacity
+                        style={[styles.modalBtn, styles.modalBtnSecondary]}
+                        onPress={() => {
+                          const b = orgSeleccionada.banco;
+                          const txt = `Donación a ${orgSeleccionada.nombre}\nBanco: ${b.banco}\nTipo: ${b.tipoCuenta}\nN° Cuenta: ${b.numero}\nRUT: ${b.rut}\nTitular: ${b.titular}\nEmail: ${b.email}`;
+                          if (copyToClipboard(txt)) {
+                            Alert.alert('Datos copiados', 'Todos los datos bancarios fueron copiados al portapapeles.');
+                          }
+                        }}
+                      >
+                        <Ionicons name="copy" size={16} color={COLORS.primary} />
+                        <Text style={styles.modalBtnSecondaryText}>Copiar todo</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
-                      style={[styles.modalBtn, styles.modalBtnSecondary]}
-                      onPress={() => {
-                        const b = orgSeleccionada.banco;
-                        const txt = `Donación a ${orgSeleccionada.nombre}\nBanco: ${b.banco}\nTipo: ${b.tipoCuenta}\nN° Cuenta: ${b.numero}\nRUT: ${b.rut}\nTitular: ${b.titular}\nEmail: ${b.email}`;
-                        if (copyToClipboard(txt)) {
-                          Alert.alert('Datos copiados', 'Todos los datos bancarios fueron copiados al portapapeles.');
-                        }
-                      }}
+                      style={[styles.modalBtn, styles.modalBtnPrimary]}
+                      onPress={cerrarModal}
                     >
-                      <Ionicons name="copy" size={16} color={COLORS.primary} />
-                      <Text style={styles.modalBtnSecondaryText}>Copiar todo</Text>
+                      <Text style={styles.modalBtnPrimaryText}>Cerrar</Text>
                     </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnPrimary]}
-                    onPress={() => setOrgSeleccionada(null)}
-                  >
-                    <Text style={styles.modalBtnPrimaryText}>Cerrar</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
+                  </View>
+                </>
+              )}
+            </View>
+          </ScrollView>
         </View>
       </Modal>
     </ScrollView>
@@ -227,6 +392,7 @@ export default function DonarScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  centered: { justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 30 },
   headerBox: {
     backgroundColor: COLORS.white, borderRadius: 14, padding: 18,
@@ -239,6 +405,15 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     color: COLORS.gray, fontSize: 13, textAlign: 'center',
     marginTop: 6, lineHeight: 18,
+  },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8, marginBottom: 14,
+  },
+  errorBannerText: {
+    color: COLORS.white, fontSize: 12, marginLeft: 6, flex: 1,
   },
   card: {
     backgroundColor: COLORS.white, borderRadius: 14, padding: 16, marginBottom: 14,
@@ -290,7 +465,12 @@ const styles = StyleSheet.create({
   // --- Modal ---
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center', alignItems: 'center', padding: 16,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  modalScroll: { width: '100%' },
+  modalScrollContent: {
+    flexGrow: 1, justifyContent: 'center',
+    alignItems: 'center', padding: 16,
   },
   modalCard: {
     backgroundColor: COLORS.white, borderRadius: 18, padding: 22,
@@ -326,6 +506,50 @@ const styles = StyleSheet.create({
     marginLeft: 6, color: COLORS.text, fontSize: 12,
     flex: 1, lineHeight: 17,
   },
+  registroBox: {
+    backgroundColor: COLORS.background, borderRadius: 12,
+    padding: 14, marginTop: 12,
+  },
+  registroTitle: {
+    fontSize: 14, fontWeight: 'bold', color: COLORS.text, marginBottom: 4,
+  },
+  registroSubtitle: {
+    fontSize: 12, color: COLORS.gray, marginBottom: 10, lineHeight: 16,
+  },
+  montoInputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.white, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.lightGray,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  montoPrefix: {
+    fontSize: 16, color: COLORS.gray, fontWeight: 'bold', marginRight: 6,
+  },
+  montoInput: {
+    flex: 1, fontSize: 16, color: COLORS.text,
+    paddingVertical: Platform.OS === 'web' ? 6 : 4,
+  },
+  montoSuffix: {
+    fontSize: 12, color: COLORS.gray, fontWeight: '600', marginLeft: 6,
+  },
+  donationError: {
+    color: '#E63946', fontSize: 12, marginTop: 6,
+  },
+  donationOk: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 10,
+  },
+  donationOkText: {
+    color: COLORS.healthy, fontSize: 13, marginLeft: 6, fontWeight: '600',
+  },
+  registroButton: {
+    backgroundColor: COLORS.primary, paddingVertical: 11,
+    borderRadius: 25, marginTop: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+  },
+  registroButtonText: {
+    color: COLORS.white, fontWeight: 'bold', fontSize: 14, marginLeft: 6,
+  },
+  buttonDisabled: { opacity: 0.6 },
   modalActions: { flexDirection: 'row', marginTop: 16 },
   modalBtn: {
     flex: 1, paddingVertical: 12, borderRadius: 25,
