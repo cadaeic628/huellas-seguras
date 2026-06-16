@@ -28,6 +28,12 @@ export const ORGANIZACIONES = [
       titular: 'Fundación Refugio Esperanza',
       email: 'donaciones@refugioesperanza.cl',
     },
+    redes: {
+      instagram: '@refugioesperanza',
+      facebook: 'RefugioEsperanzaCL',
+      whatsapp: '+56987654321',
+      web: 'https://refugioesperanza.cl',
+    },
   },
   {
     id: 'ORG-02',
@@ -45,6 +51,11 @@ export const ORGANIZACIONES = [
       rut: '65.987.654-3',
       titular: 'Asociación Huellitas Chile',
       email: 'aportes@huellitas.cl',
+    },
+    redes: {
+      instagram: '@huellitas.cl',
+      facebook: 'huellitaschile',
+      whatsapp: '+56912345678',
     },
   },
   {
@@ -64,6 +75,10 @@ export const ORGANIZACIONES = [
       titular: 'ONG Patitas en la Calle',
       email: 'donar@patitasenlacalle.org',
     },
+    redes: {
+      instagram: '@patitasenlacalle',
+      web: 'https://patitasenlacalle.org',
+    },
   },
   {
     id: 'ORG-04',
@@ -81,6 +96,10 @@ export const ORGANIZACIONES = [
       rut: '76.333.222-1',
       titular: 'Red Animal Solidaria SpA',
       email: 'tesoreria@redanimalsolidaria.cl',
+    },
+    redes: {
+      facebook: 'RedAnimalSolidaria',
+      whatsapp: '+56977773434',
     },
   },
   {
@@ -100,7 +119,13 @@ export const ORGANIZACIONES = [
       titular: 'Hogar Animal Cordillera Ltda.',
       email: 'donaciones@hogarcordillera.cl',
     },
+    redes: {
+      instagram: '@hogarcordillera',
+      facebook: 'HogarAnimalCordillera',
+      web: 'https://hogarcordillera.cl',
+    },
   },
+  // Sin redes a propósito: la fila no debe mostrarse para esta organización.
   {
     id: 'ORG-06',
     nombre: 'Fundación Patitas del Sur',
@@ -828,25 +853,50 @@ export const ACTUALIZACIONES_FORO = [
   },
 ];
 
+// Las redes de las veterinarias son información pública precargada por el equipo
+// del proyecto. No se editan desde la app (ver CLAUDE.md → "Veterinarias").
 export const VETERINARIAS = [
   { id: 'VET-01', nombre: 'Veterinaria Patitas Felices', comuna: 'Ñuñoa',
     telefono: '+56 2 2345 6789', horario: 'Lun a Vie 09:00 - 19:00',
-    lat: -33.4540, lng: -70.5985 },
+    lat: -33.4540, lng: -70.5985,
+    redes: {
+      instagram: '@patitasfelices.vet',
+      whatsapp: '+56223456789',
+      web: 'https://patitasfelices.cl',
+    } },
   { id: 'VET-02', nombre: 'Clínica Animal Salud', comuna: 'Providencia',
     telefono: '+56 2 2987 6543', horario: 'Lun a Sáb 10:00 - 20:00',
-    lat: -33.4280, lng: -70.6190 },
+    lat: -33.4280, lng: -70.6190,
+    redes: {
+      instagram: '@clinicaanimalsalud',
+      facebook: 'ClinicaAnimalSalud',
+    } },
   { id: 'VET-03', nombre: 'Hospital Veterinario Central', comuna: 'Santiago Centro',
     telefono: '+56 2 2456 7890', horario: '24 horas',
-    lat: -33.4489, lng: -70.6693 },
+    lat: -33.4489, lng: -70.6693,
+    redes: {
+      web: 'https://hospitalvetcentral.cl',
+      whatsapp: '+56224567890',
+    } },
   { id: 'VET-04', nombre: 'VetCare Cordillera', comuna: 'Las Condes',
     telefono: '+56 2 2876 5432', horario: 'Lun a Dom 09:00 - 21:00',
-    lat: -33.4150, lng: -70.5710 },
+    lat: -33.4150, lng: -70.5710,
+    redes: {
+      instagram: '@vetcare.cordillera',
+      facebook: 'VetCareCordillera',
+      web: 'https://vetcarecordillera.cl',
+    } },
+  // Sin redes a propósito.
   { id: 'VET-05', nombre: 'Clínica Veterinaria Maipú', comuna: 'Maipú',
     telefono: '+56 2 2654 3210', horario: 'Lun a Sáb 09:00 - 19:00',
     lat: -33.5145, lng: -70.7580 },
   { id: 'VET-06', nombre: 'Hospital Animal Sur', comuna: 'La Florida',
     telefono: '+56 2 2321 0987', horario: 'Lun a Dom 08:00 - 22:00',
-    lat: -33.5270, lng: -70.5940 },
+    lat: -33.5270, lng: -70.5940,
+    redes: {
+      facebook: 'HospitalAnimalSur',
+      whatsapp: '+56223210987',
+    } },
 ];
 
 // Helpers de etiqueta y color
