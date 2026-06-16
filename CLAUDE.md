@@ -8,7 +8,8 @@ Su objetivo es que una sesión nueva pueda colaborar sin re-explorar todo el rep
 ## Convenciones del proyecto
 
 - **Stack**: Expo SDK 50, React Native 0.73, React 18.2, `@react-navigation/bottom-tabs` v6, Supabase (Postgres + Auth + Storage).
-- **Datos**: Auth ya vive en Supabase. `src/data/mockData.js` aún contiene el catálogo seed para las pantallas que no se han migrado. La migración se hace pantalla por pantalla (ver Roadmap §1).
+- **Datos**: Auth y catálogo de animales (`AnimalesScreen`) viven en Supabase. `src/data/mockData.js` aún sostiene las pantallas que faltan migrar (Donar, Foro, Reportar, Perfil, Mapa). La migración se hace pantalla por pantalla (ver Roadmap §1).
+- **Seed**: `supabase/seed.sql` tiene 5 organizaciones y 10 animales con UUIDs fijos, idempotente. Re-correrlo en SQL Editor cuando se necesite repoblar.
 - **Cliente Supabase**: `src/lib/supabase.js` exporta `supabase`, leyendo URL y anon key desde `app.json` → `expo.extra`. La anon key es pública por diseño; la `service_role` NUNCA se commitea.
 - **Esquema DB**: vive en `supabase/schema.sql`. Es idempotente; al modificar tablas, RLS o RPCs, actualizar ese archivo y re-correrlo en el SQL Editor.
 - **Versión del SDK**: `@supabase/supabase-js` está fijo en `2.45.6`. Versiones ≥ 2.50 introducen un import dinámico de `@opentelemetry/api` que Metro no resuelve y rompe el build de Vercel.
@@ -121,12 +122,14 @@ seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
   `supabase.auth`. Splash de carga en `App.js` mientras hidrata la sesión.
 - [x] `fix(deps): pin @supabase/supabase-js to 2.45.6` — evita import de OTEL
   que rompe Metro/Vercel.
+- [x] `feat(animales): load catalog from supabase` — `AnimalesScreen.js` lee
+  con join `animales, organizaciones(*)`, mapea snake → camelCase y dispara
+  los RPCs `apadrinar` / `adoptar` desde el modal de acción.
+  `FichaAnimalModal` acepta `org` como prop con fallback a
+  `getOrganizacionDeAnimal` de `mockData` para no romper Mapa/Perfil
+  mientras siguen pendientes. Seed inicial en `supabase/seed.sql`.
 
 **Pendiente** (orden sugerido):
-- [ ] `feat(animales): load catalog from supabase` — `AnimalesScreen.js`.
-  Filtros, ficha modal, llamadas a RPC `apadrinar` y `adoptar`. Antes de
-  empezar, seedear ~5 organizaciones y ~10 animales en el Table Editor para
-  tener qué mostrar (idealmente con UUIDs reales, no `'ORG-01'`).
 - [ ] `feat(donar): load orgs from supabase` — `DonarScreen.js`. Persistir
   donaciones en la tabla `donaciones` con el `user_id` del que dona.
 - [ ] `feat(foro): load posts + publishing + storage uploads` — `ForoScreen.js`.
@@ -148,13 +151,17 @@ seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
 **Notas**:
 - Las cuentas demo (`maria@example.com`, etc.) viven solo como referencia
   histórica en commits viejos. Para probar hay que crearlas con signup real.
-- Para reseedear datos rápido, escribir un script SQL en `supabase/seed.sql`
-  (no commitearlo si tiene PII o datos pesados).
+- `supabase/seed.sql` ya tiene 5 orgs + 10 animales con UUIDs fijos para
+  arrancar. Es idempotente (`ON CONFLICT DO NOTHING`). Si una pantalla
+  futura necesita más datos seed, extender ese mismo archivo.
 
 ## 2. Bug: animales adoptados muestran "Quiero adoptar"
 
-En `src/screens/AnimalesScreen.js`, los animales con `adoptado === true` (ej:
-Pelusa HS-005, Misha HS-007) siguen mostrando el botón "¡Quiero adoptar!".
+En `src/screens/AnimalesScreen.js`, los animales con `adoptado === true`
+(o `apadrinado === true`) siguen mostrando los botones "¡Quiero adoptar!" /
+"Quiero apadrinar". Si el usuario los toca, el RPC falla con "Animal ya
+tiene hogar" / "Animal ya tiene padrino" y el modal muestra el error —
+funcionalmente seguro, pero mal UX.
 
 **Fix**:
 - Si `animal.adoptado`, ocultar el botón "Quiero adoptar" y reemplazarlo por un
