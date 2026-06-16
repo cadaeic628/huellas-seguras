@@ -934,7 +934,7 @@ export const COMUNAS_SANTIAGO = [
 
 // Usuarios demo para el mock de auth. Las contraseñas viven en texto plano
 // porque toda la sesión es client-side y no hay backend. Cuando se migre a
-// Supabase Auth (ver Roadmap §4) este arreglo desaparece.
+// Supabase Auth (ver Roadmap §1) este arreglo desaparece.
 export const USUARIOS_DEMO = [
   {
     id: 'USER-DEMO-01',
@@ -961,6 +961,64 @@ export const USUARIOS_DEMO = [
   },
 ];
 
+// Vínculos persona ↔ animal. La verdad para los filtros del catálogo sigue
+// siendo el boolean apadrinado/adoptado dentro del animal; estos mapas indican
+// QUIÉN es el padrino/adoptante cuando aplica, y solo cubren a la usuaria demo.
+// Cuando se migre a Supabase (Roadmap §1) esto se reemplaza por las columnas
+// apadrinado_por / adoptado_por de la tabla animales.
+export const APADRINAMIENTOS_USUARIO = {
+  'USER-DEMO-01': ['HS-002', 'HS-006', 'HS-011'],
+};
+
+export const ADOPCIONES_USUARIO = {
+  'USER-DEMO-01': ['HS-005', 'HS-007'],
+};
+
+// Aportes hechos por usuarios a organizaciones. Sembrados para María para que
+// su perfil y los perfiles de las fundaciones tengan contenido visible.
+export const DONACIONES = [
+  {
+    id: 'DON-01', userId: 'USER-DEMO-01', organizacionId: 'ORG-01',
+    monto: 15000, fecha: '2026-04-22',
+  },
+  {
+    id: 'DON-02', userId: 'USER-DEMO-01', organizacionId: 'ORG-02',
+    monto: 25000, fecha: '2026-05-08',
+  },
+  {
+    id: 'DON-03', userId: 'USER-DEMO-01', organizacionId: 'ORG-01',
+    monto: 10000, fecha: '2026-06-02',
+  },
+  {
+    id: 'DON-04', userId: 'USER-DEMO-01', organizacionId: 'ORG-05',
+    monto: 30000, fecha: '2026-06-10',
+  },
+  {
+    id: 'DON-05', userId: 'USER-DEMO-01', organizacionId: 'ORG-02',
+    monto: 20000, fecha: '2026-06-13',
+  },
+];
+
+// Reportes de avistamiento enviados por usuarios. animalId puede ser null si
+// el reporte aún no fue matcheado contra el catálogo.
+export const REPORTES_USUARIO = [
+  {
+    id: 'REP-01', userId: 'USER-DEMO-01', animalId: 'HS-013',
+    fecha: '2026-06-05', estado: 'recibido',
+    ubicacion: 'Av. Matta 1240, Santiago Centro',
+  },
+  {
+    id: 'REP-02', userId: 'USER-DEMO-01', animalId: null,
+    fecha: '2026-06-09', estado: 'en revisión',
+    ubicacion: 'Plaza Brasil, Santiago Centro',
+  },
+  {
+    id: 'REP-03', userId: 'USER-DEMO-01', animalId: 'HS-001',
+    fecha: '2026-06-12', estado: 'verificado',
+    ubicacion: 'Plaza Ñuñoa',
+  },
+];
+
 // Helpers de correlación
 export const getOrganizacionById = (id) =>
   ORGANIZACIONES.find((o) => o.id === id);
@@ -978,3 +1036,22 @@ export const getActualizacionesDeOrganizacion = (organizacionId) =>
   ACTUALIZACIONES_FORO.filter((p) => p.organizacionId === organizacionId);
 
 export const getAnimalById = (id) => ANIMALS.find((a) => a.id === id);
+
+export const getAnimalesApadrinadosPorUsuario = (userId) =>
+  (APADRINAMIENTOS_USUARIO[userId] || [])
+    .map(getAnimalById)
+    .filter(Boolean);
+
+export const getAnimalesAdoptadosPorUsuario = (userId) =>
+  (ADOPCIONES_USUARIO[userId] || [])
+    .map(getAnimalById)
+    .filter(Boolean);
+
+export const getDonacionesDeUsuario = (userId) =>
+  DONACIONES.filter((d) => d.userId === userId);
+
+export const getReportesDeUsuario = (userId) =>
+  REPORTES_USUARIO.filter((r) => r.userId === userId);
+
+export const getDonacionesDeOrganizacion = (organizacionId) =>
+  DONACIONES.filter((d) => d.organizacionId === organizacionId);
