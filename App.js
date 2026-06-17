@@ -120,6 +120,9 @@ function MainNavigator() {
         headerStyle: { backgroundColor: COLORS.primary },
         headerTintColor: COLORS.white,
         headerTitleStyle: { fontWeight: 'bold' },
+        // Alineado a la izquierda. El logo irá al extremo izquierdo más
+        // adelante (via headerLeft) y el menú de cuenta queda a la derecha.
+        headerTitleAlign: 'left',
         headerRight: () => <HeaderMenu navigation={navigation} />,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
