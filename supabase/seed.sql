@@ -541,34 +541,33 @@ set search_path = public
 as $$
 declare
   v_user_id uuid;
-  v_count_apad int := 0;
-  v_count_adop int := 0;
-  v_count_don int := 0;
-  v_count_rep int := 0;
+  v_count_apad int;
+  v_count_adop int;
+  v_count_don int;
+  v_count_rep int;
 begin
   select id into v_user_id from public.users where email = p_email;
   if v_user_id is null then
     raise exception 'No existe usuario con email %', p_email;
   end if;
 
-  -- Apadrina 3 (Lola, Toby, Lobo): solo si no tienen padrino aún
+  -- Apadrina 3 (Lola, Toby, Lobo) en una sola sentencia para que el
+  -- row_count sea acumulado por postgres. Skip si ya tienen padrino.
   update public.animales set apadrinado_por = v_user_id
-  where id = '22222222-2222-2222-2222-222222222202' and apadrinado_por is null;
+  where id in (
+    '22222222-2222-2222-2222-222222222202',
+    '22222222-2222-2222-2222-222222222205',
+    '22222222-2222-2222-2222-222222222214'
+  ) and apadrinado_por is null;
   get diagnostics v_count_apad = row_count;
-  update public.animales set apadrinado_por = v_user_id
-  where id = '22222222-2222-2222-2222-222222222205' and apadrinado_por is null;
-  get diagnostics v_count_apad = v_count_apad + row_count;
-  update public.animales set apadrinado_por = v_user_id
-  where id = '22222222-2222-2222-2222-222222222214' and apadrinado_por is null;
-  get diagnostics v_count_apad = v_count_apad + row_count;
 
-  -- Adopta 2 (Roma, Nube): solo si no tienen hogar aún
+  -- Adopta 2 (Roma, Nube)
   update public.animales set adoptado_por = v_user_id
-  where id = '22222222-2222-2222-2222-222222222209' and adoptado_por is null;
+  where id in (
+    '22222222-2222-2222-2222-222222222209',
+    '22222222-2222-2222-2222-222222222208'
+  ) and adoptado_por is null;
   get diagnostics v_count_adop = row_count;
-  update public.animales set adoptado_por = v_user_id
-  where id = '22222222-2222-2222-2222-222222222208' and adoptado_por is null;
-  get diagnostics v_count_adop = v_count_adop + row_count;
 
   -- Donaciones (idempotente vía delete + insert)
   delete from public.donaciones where user_id = v_user_id and monto in (15000, 25000, 10000, 30000);
