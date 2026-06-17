@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,21 +8,12 @@ import {
   Modal,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  getOrganizacionById,
-  getAnimalesDeOrganizacion,
-  getActualizacionesDeOrganizacion,
-  getDonacionesDeOrganizacion,
-  getDonacionesDeUsuario,
-  getReportesDeUsuario,
-  getAnimalesApadrinadosPorUsuario,
-  getAnimalesAdoptadosPorUsuario,
-  getAnimalById,
-} from '../data/mockData';
+import { supabase } from '../lib/supabase';
 import FichaAnimalModal from '../components/FichaAnimalModal';
 import RedesSocialesRow from '../components/RedesSocialesRow';
 
@@ -38,8 +29,10 @@ const MESES = [
 ];
 
 const formatearFecha = (iso) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${d} ${MESES[m - 1]} ${y}`;
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 };
 
 const iniciales = (nombre) => {
@@ -47,6 +40,48 @@ const iniciales = (nombre) => {
   const partes = nombre.trim().split(/\s+/).slice(0, 2);
   return partes.map((p) => p[0]?.toUpperCase()).join('') || '?';
 };
+
+// Mapea row de animales (con join a organizaciones) al shape camelCase.
+function mapAnimalRow(row) {
+  const orgRow = row.organizaciones;
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    tipo: row.tipo,
+    estado: row.estado,
+    zona: row.zona,
+    comuna: row.comuna,
+    descripcion: row.descripcion,
+    foto: row.foto_url,
+    organizacionId: row.organizacion_id,
+    apadrinado: row.apadrinado_por != null,
+    adoptado: row.adoptado_por != null,
+    ficha: row.ficha ?? {},
+    org: orgRow
+      ? {
+          id: orgRow.id,
+          nombre: orgRow.nombre,
+          comuna: orgRow.comuna,
+          telefono: orgRow.telefono,
+          horario: orgRow.horario,
+        }
+      : null,
+  };
+}
+
+function mapOrgRow(row) {
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    comuna: row.comuna,
+    comunasOperacion: row.comunas_operacion ?? [],
+    descripcion: row.descripcion,
+    telefono: row.telefono,
+    horario: row.horario,
+    banco: row.banco ?? {},
+    redes: row.redes,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Entry
@@ -88,16 +123,48 @@ function PerfilNormal() {
   const [editOpen, setEditOpen] = useState(false);
   const [fichaAnimal, setFichaAnimal] = useState(null);
 
-  const apadrinados = useMemo(
-    () => getAnimalesApadrinadosPorUsuario(user.id),
-    [user.id]
-  );
-  const adoptados = useMemo(
-    () => getAnimalesAdoptadosPorUsuario(user.id),
-    [user.id]
-  );
-  const reportes = useMemo(() => getReportesDeUsuario(user.id), [user.id]);
-  const aportes = useMemo(() => getDonacionesDeUsuario(user.id), [user.id]);
+  const [loading, setLoading] = useState(true);
+  const [apadrinados, setApadrinados] = useState([]);
+  const [adoptados, setAdoptados] = useState([]);
+  const [reportes, setReportes] = useState([]);
+  const [aportes, setAportes] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      const [apadResp, adoptResp, repsResp, donsResp] = await Promise.all([
+        supabase
+          .from('animales')
+          .select('*, organizaciones(*)')
+          .eq('apadrinado_por', user.id),
+        supabase
+          .from('animales')
+          .select('*, organizaciones(*)')
+          .eq('adoptado_por', user.id),
+        supabase
+          .from('reportes')
+          .select(
+            'id, ubicacion, descripcion, estado, estado_observado, created_at, animal_id, animales(id, nombre, zona, comuna, foto_url, tipo, estado, ficha, organizaciones(*))'
+          )
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('donaciones')
+          .select('id, monto, created_at, organizacion_id, organizaciones(nombre)')
+          .order('created_at', { ascending: false }),
+      ]);
+      if (!mounted) return;
+      setApadrinados((apadResp.data ?? []).map(mapAnimalRow));
+      setAdoptados((adoptResp.data ?? []).map(mapAnimalRow));
+      setReportes(repsResp.data ?? []);
+      setAportes(donsResp.data ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [user.id]);
+
   const totalAportado = aportes.reduce((acc, d) => acc + d.monto, 0);
 
   const confirmarEliminar = () => {
@@ -122,67 +189,78 @@ function PerfilNormal() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <PerfilHeader user={user} badge={{ icon: 'person', label: 'Persona' }} />
 
-      <Section
-        title="Animales que apadrinas"
-        icon="heart-circle-outline"
-        empty={apadrinados.length === 0
-          ? 'Todavía no apadrinas a ningún animal. Cuando lo hagas, aparecerán aquí.'
-          : null}
-      >
-        <View style={styles.chipsRow}>
-          {apadrinados.map((a) => (
-            <AnimalChip key={a.id} animal={a} onPress={() => setFichaAnimal(a)} />
-          ))}
-        </View>
-      </Section>
+      {loading ? (
+        <ActivityIndicator
+          size="large"
+          color={COLORS.primary}
+          style={styles.loader}
+        />
+      ) : (
+        <>
+          <Section
+            title="Animales que apadrinas"
+            icon="heart-circle-outline"
+            empty={apadrinados.length === 0
+              ? 'Todavía no apadrinas a ningún animal. Cuando lo hagas, aparecerán aquí.'
+              : null}
+          >
+            <View style={styles.chipsRow}>
+              {apadrinados.map((a) => (
+                <AnimalChip key={a.id} animal={a} onPress={() => setFichaAnimal(a)} />
+              ))}
+            </View>
+          </Section>
 
-      <Section
-        title="Animales que adoptaste"
-        icon="home-outline"
-        empty={adoptados.length === 0
-          ? 'Cuando completes una adopción, aparecerá aquí.'
-          : null}
-      >
-        <View style={styles.chipsRow}>
-          {adoptados.map((a) => (
-            <AnimalChip key={a.id} animal={a} onPress={() => setFichaAnimal(a)} />
-          ))}
-        </View>
-      </Section>
+          <Section
+            title="Animales que adoptaste"
+            icon="home-outline"
+            empty={adoptados.length === 0
+              ? 'Cuando completes una adopción, aparecerá aquí.'
+              : null}
+          >
+            <View style={styles.chipsRow}>
+              {adoptados.map((a) => (
+                <AnimalChip key={a.id} animal={a} onPress={() => setFichaAnimal(a)} />
+              ))}
+            </View>
+          </Section>
 
-      <Section
-        title="Animales que reportaste"
-        icon="camera-outline"
-        empty={reportes.length === 0
-          ? 'Aún no has enviado reportes desde el tab "Reportar".'
-          : null}
-      >
-        {reportes.map((r) => (
-          <ReporteRow key={r.id} reporte={r} onAbrirAnimal={setFichaAnimal} />
-        ))}
-      </Section>
+          <Section
+            title="Animales que reportaste"
+            icon="camera-outline"
+            empty={reportes.length === 0
+              ? 'Aún no has enviado reportes desde el tab "Reportar".'
+              : null}
+          >
+            {reportes.map((r) => (
+              <ReporteRow
+                key={r.id}
+                reporte={r}
+                onAbrirAnimal={(a) => setFichaAnimal(mapAnimalRow(a))}
+              />
+            ))}
+          </Section>
 
-      <Section
-        title="Historial de aportes"
-        icon="cash-outline"
-        right={
-          aportes.length > 0 ? (
-            <Text style={styles.totalText}>
-              Total: {currencyCLP(totalAportado)}
-            </Text>
-          ) : null
-        }
-        empty={aportes.length === 0
-          ? 'Cuando dones a una fundación desde el tab "Donar", quedará registrado aquí.'
-          : null}
-      >
-        {aportes
-          .slice()
-          .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
-          .map((d) => (
-            <DonacionRow key={d.id} donacion={d} />
-          ))}
-      </Section>
+          <Section
+            title="Historial de aportes"
+            icon="cash-outline"
+            right={
+              aportes.length > 0 ? (
+                <Text style={styles.totalText}>
+                  Total: {currencyCLP(totalAportado)}
+                </Text>
+              ) : null
+            }
+            empty={aportes.length === 0
+              ? 'Cuando dones a una fundación desde el tab "Donar", quedará registrado aquí.'
+              : null}
+          >
+            {aportes.map((d) => (
+              <DonacionRow key={d.id} donacion={d} />
+            ))}
+          </Section>
+        </>
+      )}
 
       <View style={styles.actionsBox}>
         <TouchableOpacity
@@ -226,6 +304,7 @@ function PerfilNormal() {
 
       <FichaAnimalModal
         animal={fichaAnimal}
+        org={fichaAnimal?.org}
         visible={!!fichaAnimal}
         onClose={() => setFichaAnimal(null)}
       />
@@ -240,11 +319,60 @@ function PerfilFundacion({ navigation }) {
   const { user, logout } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
 
-  const org = getOrganizacionById(user.organizacionId);
-  const animalesSeguimiento = org ? getAnimalesDeOrganizacion(org.id) : [];
-  const posts = org ? getActualizacionesDeOrganizacion(org.id) : [];
-  const aportesRecibidos = org ? getDonacionesDeOrganizacion(org.id) : [];
-  const totalRecibido = aportesRecibidos.reduce((a, d) => a + d.monto, 0);
+  const [org, setOrg] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [animalesCount, setAnimalesCount] = useState(0);
+  const [postsCount, setPostsCount] = useState(0);
+  const [totalRecibido, setTotalRecibido] = useState(0);
+
+  const fetchData = useCallback(async () => {
+    if (!user.organizacionId) return;
+    setLoading(true);
+    const [orgResp, animResp, postsResp, donsResp] = await Promise.all([
+      supabase
+        .from('organizaciones')
+        .select('*')
+        .eq('id', user.organizacionId)
+        .maybeSingle(),
+      supabase
+        .from('animales')
+        .select('id', { count: 'exact', head: true })
+        .eq('organizacion_id', user.organizacionId),
+      supabase
+        .from('foro_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('organizacion_id', user.organizacionId),
+      supabase
+        .from('donaciones')
+        .select('monto')
+        .eq('organizacion_id', user.organizacionId),
+    ]);
+    setOrg(orgResp.data ? mapOrgRow(orgResp.data) : null);
+    setAnimalesCount(animResp.count ?? 0);
+    setPostsCount(postsResp.count ?? 0);
+    setTotalRecibido(
+      (donsResp.data ?? []).reduce((acc, d) => acc + d.monto, 0)
+    );
+    setLoading(false);
+  }, [user.organizacionId]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchData().finally(() => {
+      if (!mounted) return;
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [fetchData]);
+
+  if (loading && !org) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   if (!org) {
     return (
@@ -262,8 +390,8 @@ function PerfilFundacion({ navigation }) {
 
       <View style={styles.statsRow}>
         <StatBox label="Recibido" value={currencyCLP(totalRecibido)} icon="cash" />
-        <StatBox label="Animales" value={animalesSeguimiento.length} icon="paw" />
-        <StatBox label="Posts foro" value={posts.length} icon="chatbubble" />
+        <StatBox label="Animales" value={animalesCount} icon="paw" />
+        <StatBox label="Posts foro" value={postsCount} icon="chatbubble" />
       </View>
 
       <Section title="Datos públicos" icon="business-outline"
@@ -284,10 +412,12 @@ function PerfilFundacion({ navigation }) {
         />
         <DatoRow icon="call-outline" label="Teléfono" value={org.telefono} />
         <DatoRow icon="time-outline" label="Horario" value={org.horario} />
-        <View style={styles.descripcionBox}>
-          <Text style={styles.dataLabelInline}>Descripción</Text>
-          <Text style={styles.descripcionText}>{org.descripcion}</Text>
-        </View>
+        {org.descripcion && (
+          <View style={styles.descripcionBox}>
+            <Text style={styles.dataLabelInline}>Descripción</Text>
+            <Text style={styles.descripcionText}>{org.descripcion}</Text>
+          </View>
+        )}
         {org.redes && (
           <View style={styles.redesBox}>
             <Text style={styles.dataLabelInline}>Redes</Text>
@@ -296,14 +426,16 @@ function PerfilFundacion({ navigation }) {
         )}
       </Section>
 
-      <Section title="Datos bancarios" icon="card-outline">
-        <DatoRow icon="business-outline" label="Banco" value={org.banco.banco} />
-        <DatoRow icon="wallet-outline" label="Tipo" value={org.banco.tipoCuenta} />
-        <DatoRow icon="card-outline" label="Cuenta" value={org.banco.numero} />
-        <DatoRow icon="document-outline" label="RUT" value={org.banco.rut} />
-        <DatoRow icon="person-outline" label="Titular" value={org.banco.titular} />
-        <DatoRow icon="mail-outline" label="Email" value={org.banco.email} />
-      </Section>
+      {org.banco && Object.keys(org.banco).length > 0 && (
+        <Section title="Datos bancarios" icon="card-outline">
+          <DatoRow icon="business-outline" label="Banco" value={org.banco.banco} />
+          <DatoRow icon="wallet-outline" label="Tipo" value={org.banco.tipoCuenta} />
+          <DatoRow icon="card-outline" label="Cuenta" value={org.banco.numero} />
+          <DatoRow icon="document-outline" label="RUT" value={org.banco.rut} />
+          <DatoRow icon="person-outline" label="Titular" value={org.banco.titular} />
+          <DatoRow icon="mail-outline" label="Email" value={org.banco.email} />
+        </Section>
+      )}
 
       <View style={styles.actionsBox}>
         <TouchableOpacity
@@ -329,7 +461,10 @@ function PerfilFundacion({ navigation }) {
         visible={editOpen}
         org={org}
         onCancel={() => setEditOpen(false)}
-        onClose={() => setEditOpen(false)}
+        onClose={async () => {
+          setEditOpen(false);
+          await fetchData();
+        }}
       />
     </ScrollView>
   );
@@ -368,14 +503,14 @@ function AnimalChip({ animal, onPress }) {
     <TouchableOpacity style={styles.animalChip} onPress={onPress} activeOpacity={0.85}>
       <Ionicons name="paw" size={12} color={COLORS.primary} />
       <Text style={styles.animalChipText} numberOfLines={1}>
-        {animal.nombre} · {animal.zona}
+        {animal.nombre}{animal.zona ? ` · ${animal.zona}` : ''}
       </Text>
     </TouchableOpacity>
   );
 }
 
 function ReporteRow({ reporte, onAbrirAnimal }) {
-  const animal = reporte.animalId ? getAnimalById(reporte.animalId) : null;
+  const animal = reporte.animales;
   return (
     <View style={styles.row}>
       <View style={styles.rowIcon}>
@@ -389,7 +524,7 @@ function ReporteRow({ reporte, onAbrirAnimal }) {
           {reporte.ubicacion}
         </Text>
         <View style={styles.rowMetaRow}>
-          <Text style={styles.rowDate}>{formatearFecha(reporte.fecha)}</Text>
+          <Text style={styles.rowDate}>{formatearFecha(reporte.created_at)}</Text>
           <View style={styles.estadoPill}>
             <Text style={styles.estadoPillText}>{reporte.estado}</Text>
           </View>
@@ -409,7 +544,6 @@ function ReporteRow({ reporte, onAbrirAnimal }) {
 }
 
 function DonacionRow({ donacion }) {
-  const org = getOrganizacionById(donacion.organizacionId);
   return (
     <View style={styles.row}>
       <View style={[styles.rowIcon, { backgroundColor: COLORS.accent }]}>
@@ -417,9 +551,9 @@ function DonacionRow({ donacion }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.rowTitle} numberOfLines={1}>
-          {org?.nombre ?? 'Organización'}
+          {donacion.organizaciones?.nombre ?? 'Organización'}
         </Text>
-        <Text style={styles.rowDate}>{formatearFecha(donacion.fecha)}</Text>
+        <Text style={styles.rowDate}>{formatearFecha(donacion.created_at)}</Text>
       </View>
       <Text style={styles.rowAmount}>{currencyCLP(donacion.monto)}</Text>
     </View>
@@ -646,7 +780,15 @@ function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }) {
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 40 },
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  centered: { justifyContent: 'center', alignItems: 'center' },
+  loader: { marginVertical: 40 },
 
   // Header
   headerBox: {
