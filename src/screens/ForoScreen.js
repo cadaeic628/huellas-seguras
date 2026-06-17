@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,46 +10,61 @@ import {
   TextInput,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../constants/colors';
-import {
-  ACTUALIZACIONES_FORO,
-  getOrganizacionById,
-  getAnimalesDeOrganizacion,
-  getAnimalById,
-} from '../data/mockData';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 const currencyCLP = (n) =>
   '$' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
 const formatearFecha = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
   const meses = [
     'ene', 'feb', 'mar', 'abr', 'may', 'jun',
     'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
   ];
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${d} ${meses[m - 1]} ${y}`;
+  return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`;
 };
+
+// Convierte una row de foro_posts con sus joins al shape camelCase que
+// usan las cards. `foro_post_animales(animales(...))` viene como un array
+// de objetos { animales: { ... } } por cada relación; lo aplanamos.
+function mapPostRow(row) {
+  return {
+    id: row.id,
+    titulo: row.titulo,
+    descripcion: row.descripcion,
+    monto: row.monto,
+    foto: row.foto_url,
+    boleta: row.boleta_url,
+    fecha: row.created_at,
+    organizacionId: row.organizacion_id,
+    organizacionNombre: row.organizaciones?.nombre ?? 'Fundación',
+    animales: (row.foro_post_animales ?? [])
+      .map((pa) => pa.animales)
+      .filter(Boolean),
+  };
+}
 
 function AnimalChip({ animal }) {
   return (
     <View style={styles.animalChip}>
       <Ionicons name="paw" size={11} color={COLORS.primary} />
       <Text style={styles.animalChipText}>
-        {animal.nombre} · {animal.zona}
+        {animal.nombre}
+        {animal.zona ? ` · ${animal.zona}` : ''}
       </Text>
     </View>
   );
 }
 
 function PostCard({ post, onAbrirBoleta }) {
-  const org = getOrganizacionById(post.organizacionId);
-  const animales = (post.animalesRelacionadosIds || [])
-    .map(getAnimalById)
-    .filter(Boolean);
   const [imgError, setImgError] = useState(false);
 
   return (
@@ -59,7 +74,7 @@ function PostCard({ post, onAbrirBoleta }) {
           <Ionicons name="business" size={18} color={COLORS.white} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.orgName}>{org?.nombre ?? 'Fundación'}</Text>
+          <Text style={styles.orgName}>{post.organizacionNombre}</Text>
           <Text style={styles.postDate}>{formatearFecha(post.fecha)}</Text>
         </View>
       </View>
@@ -92,11 +107,11 @@ function PostCard({ post, onAbrirBoleta }) {
         </TouchableOpacity>
       )}
 
-      {animales.length > 0 && (
+      {post.animales.length > 0 && (
         <View style={styles.animalsBox}>
           <Text style={styles.animalsTitle}>Animales relacionados</Text>
           <View style={styles.animalsRow}>
-            {animales.map((a) => (
+            {post.animales.map((a) => (
               <AnimalChip key={a.id} animal={a} />
             ))}
           </View>
@@ -122,18 +137,40 @@ async function pickImage() {
   return result.assets?.[0]?.uri ?? null;
 }
 
-function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
+// Sube un blob desde una URI local (web blob: o native file:) al bucket
+// `foro` y devuelve la URL pública. El path lleva prefijo `<user_id>/` por
+// orden — las policies de storage del schema permiten escritura libre a
+// authenticated en los 4 buckets de la app.
+async function uploadToForo(uri, userId, suffix) {
+  const res = await fetch(uri);
+  const blob = await res.blob();
+  const contentType = blob.type || 'image/jpeg';
+  const ext = (contentType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const path = `${userId}/${Date.now()}-${suffix}.${ext}`;
+  const { error: uploadError } = await supabase.storage
+    .from('foro')
+    .upload(path, blob, { contentType });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from('foro').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function PublishModal({
+  visible,
+  fundacionId,
+  userId,
+  animalesDisponibles,
+  onCancel,
+  onPublished,
+}) {
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [montoStr, setMontoStr] = useState('');
   const [foto, setFoto] = useState(null);
   const [boleta, setBoleta] = useState(null);
   const [animalesSel, setAnimalesSel] = useState([]);
-
-  const animalesDisponibles = useMemo(
-    () => getAnimalesDeOrganizacion(fundacionId),
-    [fundacionId]
-  );
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
   const reset = () => {
     setTitulo('');
@@ -142,6 +179,7 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
     setFoto(null);
     setBoleta(null);
     setAnimalesSel([]);
+    setSubmitError(null);
   };
 
   const toggleAnimal = (id) => {
@@ -150,33 +188,64 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
     );
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
+    if (submitting) return;
     if (!titulo.trim() || !descripcion.trim()) {
       Alert.alert('Faltan datos', 'El título y la descripción son obligatorios.');
       return;
     }
-    const monto = montoStr.trim()
-      ? parseInt(montoStr.replace(/\D/g, ''), 10)
-      : null;
-    if (montoStr.trim() && Number.isNaN(monto)) {
-      Alert.alert('Monto inválido', 'Ingresa solo números.');
-      return;
+    let monto = null;
+    if (montoStr.trim()) {
+      const parsed = parseInt(montoStr.replace(/\D/g, ''), 10);
+      if (!parsed || Number.isNaN(parsed)) {
+        Alert.alert('Monto inválido', 'Ingresa solo números.');
+        return;
+      }
+      monto = parsed;
     }
-    onPublish({
-      id: `POST-LOCAL-${Date.now()}`,
-      organizacionId: fundacionId,
-      fecha: new Date().toISOString().slice(0, 10),
-      titulo: titulo.trim(),
-      descripcion: descripcion.trim(),
-      ...(monto != null ? { monto } : {}),
-      ...(foto ? { foto } : {}),
-      ...(boleta ? { boleta } : {}),
-      animalesRelacionadosIds: animalesSel,
-    });
-    reset();
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const fotoUrl = foto ? await uploadToForo(foto, userId, 'foto') : null;
+      const boletaUrl = boleta ? await uploadToForo(boleta, userId, 'boleta') : null;
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('foro_posts')
+        .insert({
+          organizacion_id: fundacionId,
+          titulo: titulo.trim(),
+          descripcion: descripcion.trim(),
+          monto,
+          foto_url: fotoUrl,
+          boleta_url: boletaUrl,
+        })
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+
+      if (animalesSel.length > 0) {
+        const rels = animalesSel.map((animal_id) => ({
+          post_id: inserted.id,
+          animal_id,
+        }));
+        const { error: relError } = await supabase
+          .from('foro_post_animales')
+          .insert(rels);
+        if (relError) throw relError;
+      }
+
+      reset();
+      onPublished();
+    } catch (err) {
+      setSubmitError(err.message || 'No se pudo publicar.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleCancel = () => {
+    if (submitting) return;
     reset();
     onCancel();
   };
@@ -203,6 +272,7 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
               placeholder="Ej: Compra de 10 sacos de comida"
               style={styles.input}
               maxLength={80}
+              editable={!submitting}
             />
 
             <Text style={styles.fieldLabel}>Descripción *</Text>
@@ -214,6 +284,7 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
               multiline
               numberOfLines={4}
               maxLength={400}
+              editable={!submitting}
             />
 
             <Text style={styles.fieldLabel}>Monto en CLP (opcional)</Text>
@@ -223,11 +294,13 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
               placeholder="150000"
               keyboardType="numeric"
               style={styles.input}
+              editable={!submitting}
             />
 
             <View style={styles.attachRow}>
               <TouchableOpacity
                 style={styles.attachBtn}
+                disabled={submitting}
                 onPress={async () => {
                   const uri = await pickImage();
                   if (uri) setFoto(uri);
@@ -247,7 +320,11 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
                   {foto ? 'Foto adjunta' : 'Adjuntar foto'}
                 </Text>
                 {foto && (
-                  <TouchableOpacity onPress={() => setFoto(null)} hitSlop={8}>
+                  <TouchableOpacity
+                    onPress={() => setFoto(null)}
+                    hitSlop={8}
+                    disabled={submitting}
+                  >
                     <Ionicons name="close-circle" size={16} color={COLORS.gray} />
                   </TouchableOpacity>
                 )}
@@ -255,6 +332,7 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
 
               <TouchableOpacity
                 style={styles.attachBtn}
+                disabled={submitting}
                 onPress={async () => {
                   const uri = await pickImage();
                   if (uri) setBoleta(uri);
@@ -274,7 +352,11 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
                   {boleta ? 'Boleta adjunta' : 'Adjuntar boleta'}
                 </Text>
                 {boleta && (
-                  <TouchableOpacity onPress={() => setBoleta(null)} hitSlop={8}>
+                  <TouchableOpacity
+                    onPress={() => setBoleta(null)}
+                    hitSlop={8}
+                    disabled={submitting}
+                  >
                     <Ionicons name="close-circle" size={16} color={COLORS.gray} />
                   </TouchableOpacity>
                 )}
@@ -299,6 +381,7 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
                         styles.animalPickChip,
                         active && styles.animalPickChipActive,
                       ]}
+                      disabled={submitting}
                       onPress={() => toggleAnimal(a.id)}
                     >
                       <Ionicons
@@ -319,21 +402,37 @@ function PublishModal({ visible, fundacionId, onCancel, onPublish }) {
                 })}
               </View>
             )}
+
+            {submitError && (
+              <Text style={styles.submitError}>{submitError}</Text>
+            )}
           </ScrollView>
 
           <View style={styles.modalActions}>
             <TouchableOpacity
               style={[styles.modalBtn, styles.modalBtnSecondary]}
               onPress={handleCancel}
+              disabled={submitting}
             >
               <Text style={styles.modalBtnSecondaryText}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalBtn, styles.modalBtnPrimary]}
+              style={[
+                styles.modalBtn,
+                styles.modalBtnPrimary,
+                submitting && styles.btnDisabled,
+              ]}
               onPress={handlePublish}
+              disabled={submitting}
             >
-              <Ionicons name="send" size={14} color={COLORS.white} />
-              <Text style={styles.modalBtnPrimaryText}>Publicar</Text>
+              {submitting ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <>
+                  <Ionicons name="send" size={14} color={COLORS.white} />
+                  <Text style={styles.modalBtnPrimaryText}>Publicar</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -380,20 +479,67 @@ export default function ForoScreen() {
   const esFundacion = user?.role === 'fundacion';
   const fundacionId = user?.organizacionId;
 
-  const [postsLocales, setPostsLocales] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedError, setFeedError] = useState(null);
+  const [animalesDeLaOrg, setAnimalesDeLaOrg] = useState([]);
   const [publishOpen, setPublishOpen] = useState(false);
   const [boletaPost, setBoletaPost] = useState(null);
 
-  const feed = useMemo(() => {
-    return [...postsLocales, ...ACTUALIZACIONES_FORO].sort((a, b) =>
-      a.fecha < b.fecha ? 1 : -1
-    );
-  }, [postsLocales]);
+  const fetchFeed = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('foro_posts')
+      .select(
+        'id, titulo, descripcion, monto, foto_url, boleta_url, created_at, organizacion_id, organizaciones(id, nombre), foro_post_animales(animales(id, nombre, zona))'
+      )
+      .order('created_at', { ascending: false });
+    if (error) {
+      setFeedError(error.message);
+      return;
+    }
+    setFeedError(null);
+    setPosts((data ?? []).map(mapPostRow));
+  }, []);
 
-  const handlePublish = (post) => {
-    setPostsLocales((prev) => [post, ...prev]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      await fetchFeed();
+      if (mounted) setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [fetchFeed]);
+
+  useEffect(() => {
+    if (!esFundacion || !fundacionId) {
+      setAnimalesDeLaOrg([]);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase
+        .from('animales')
+        .select('id, nombre, zona')
+        .eq('organizacion_id', fundacionId)
+        .order('nombre', { ascending: true });
+      if (mounted) setAnimalesDeLaOrg(data ?? []);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [esFundacion, fundacionId]);
+
+  const handlePublished = async () => {
     setPublishOpen(false);
+    await fetchFeed();
   };
+
+  const feedEmpty = useMemo(
+    () => !loading && !feedError && posts.length === 0,
+    [loading, feedError, posts.length]
+  );
 
   return (
     <View style={styles.container}>
@@ -409,13 +555,38 @@ export default function ForoScreen() {
           </Text>
         </View>
 
-        {feed.map((post) => (
-          <PostCard
-            key={post.id}
-            post={post}
-            onAbrirBoleta={setBoletaPost}
+        {feedError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning-outline" size={16} color={COLORS.white} />
+            <Text style={styles.errorBannerText}>
+              No pudimos cargar el foro: {feedError}
+            </Text>
+          </View>
+        )}
+
+        {loading ? (
+          <ActivityIndicator
+            size="large"
+            color={COLORS.primary}
+            style={styles.loader}
           />
-        ))}
+        ) : feedEmpty ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="chatbubbles-outline" size={48} color={COLORS.gray} />
+            <Text style={styles.emptyText}>
+              Aún no hay publicaciones. Las fundaciones compartirán aquí el uso
+              de los aportes recibidos.
+            </Text>
+          </View>
+        ) : (
+          posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onAbrirBoleta={setBoletaPost}
+            />
+          ))
+        )}
 
         {esFundacion && (
           <Text style={styles.footerNote}>
@@ -439,8 +610,10 @@ export default function ForoScreen() {
         <PublishModal
           visible={publishOpen}
           fundacionId={fundacionId}
+          userId={user?.id}
+          animalesDisponibles={animalesDeLaOrg}
           onCancel={() => setPublishOpen(false)}
-          onPublish={handlePublish}
+          onPublished={handlePublished}
         />
       )}
 
@@ -471,6 +644,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
     lineHeight: 17,
+  },
+
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: COLORS.white,
+    fontSize: 12,
+    marginLeft: 6,
+    flex: 1,
+  },
+
+  loader: { marginVertical: 40 },
+
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 24,
+    marginBottom: 12,
+  },
+  emptyText: {
+    color: COLORS.gray,
+    marginTop: 10,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 
   postCard: {
@@ -685,6 +891,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
+  submitError: {
+    color: '#E63946',
+    fontSize: 12,
+    marginTop: 10,
+    textAlign: 'center',
+  },
   modalActions: {
     flexDirection: 'row',
     marginTop: 12,
@@ -718,6 +930,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 13,
   },
+  btnDisabled: { opacity: 0.6 },
 
   // --- Receipt modal ---
   receiptOverlay: {

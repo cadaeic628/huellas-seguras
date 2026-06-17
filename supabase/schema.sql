@@ -430,3 +430,39 @@ begin
   delete from auth.users where id = auth.uid();
 end;
 $$;
+
+-- ============================================================
+-- Storage: policies para los buckets de la app
+-- ============================================================
+--
+-- Requiere haber creado los buckets `avatars`, `animales`, `reportes` y
+-- `foro` en Storage (paso 3 al inicio del archivo). Los buckets son
+-- públicos para lectura; agregamos policies para que cualquier usuario
+-- autenticado pueda subir/editar/borrar objetos en ellos. Las pantallas
+-- (ej. Foro) usan paths con prefijo `<user_id>/...` para facilitar
+-- auditoría manual, pero las policies no lo exigen para mantener el
+-- patrón simple a nivel de taller.
+
+drop policy if exists "storage_app_buckets_select" on storage.objects;
+create policy "storage_app_buckets_select" on storage.objects
+  for select using (
+    bucket_id in ('avatars', 'animales', 'reportes', 'foro')
+  );
+
+drop policy if exists "storage_app_buckets_insert" on storage.objects;
+create policy "storage_app_buckets_insert" on storage.objects
+  for insert to authenticated with check (
+    bucket_id in ('avatars', 'animales', 'reportes', 'foro')
+  );
+
+drop policy if exists "storage_app_buckets_update" on storage.objects;
+create policy "storage_app_buckets_update" on storage.objects
+  for update to authenticated using (
+    bucket_id in ('avatars', 'animales', 'reportes', 'foro')
+  );
+
+drop policy if exists "storage_app_buckets_delete" on storage.objects;
+create policy "storage_app_buckets_delete" on storage.objects
+  for delete to authenticated using (
+    bucket_id in ('avatars', 'animales', 'reportes', 'foro')
+  );
