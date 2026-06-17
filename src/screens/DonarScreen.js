@@ -393,7 +393,13 @@ export default function DonarScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centered: { justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 16, paddingBottom: 30 },
+  content: {
+    padding: 16,
+    paddingBottom: 30,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
   headerBox: {
     backgroundColor: COLORS.white, borderRadius: 14, padding: 18,
     alignItems: 'center', marginBottom: 18,
