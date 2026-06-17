@@ -98,6 +98,20 @@ login para ese rol.
    `update` está restringido a la fundación dueña), expón un RPC SECURITY
    DEFINER en `schema.sql` y llama con `supabase.rpc('nombre', { args })`.
 
+### Patrón para subir un archivo a Storage
+
+Estrenado en `ForoScreen.js` (helper `uploadToForo`). Reutilizable como `uploadTo<bucket>`:
+
+1. `expo-image-picker` devuelve una URI (web `blob:` o nativo `file:`).
+2. `const blob = await (await fetch(uri)).blob();` — funciona en ambos lados.
+3. Define un path con prefijo `<user_id>/...` para auditoría:
+   `` `${userId}/${Date.now()}-foto.jpg` ``.
+4. `await supabase.storage.from('<bucket>').upload(path, blob, { contentType: blob.type })`.
+5. Guarda la URL pública: `supabase.storage.from('<bucket>').getPublicUrl(path).data.publicUrl`.
+6. Persiste esa URL en la columna `_url` (`foto_url`, `comprobante_url`, etc.).
+
+Las policies de `storage.objects` viven en `schema.sql` ("Storage: policies para los buckets de la app") y permiten escritura libre a `authenticated` en los 4 buckets. Para producción endurecer con checks de path.
+
 ---
 
 # Roadmap (trabajo pendiente)
@@ -133,12 +147,16 @@ seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
   stats del card. El modal de datos bancarios estrena un formulario
   "Registra tu aporte" que inserta en `donaciones` con `user_id` del
   donante (RLS `donaciones_insert_self`).
+- [x] `feat(foro): load posts + publishing + storage uploads` —
+  `ForoScreen.js` lee `foro_posts` con join `organizaciones(nombre)` y
+  `foro_post_animales(animales(id, nombre, zona))`. `PublishModal` sube
+  foto/boleta al bucket `foro` (path `<user_id>/<ts>-<suffix>.<ext>`),
+  inserta en `foro_posts` y luego en `foro_post_animales` para los
+  animales seleccionados, y dispara un re-fetch del feed. Este commit
+  estrenó las policies de `storage.objects` en `schema.sql` y la
+  mini-sección "Patrón para subir un archivo a Storage" en este archivo.
 
 **Pendiente** (orden sugerido):
-- [ ] `feat(foro): load posts + publishing + storage uploads` — `ForoScreen.js`.
-  Lectura de `foro_posts` con sus `foro_post_animales`. El `PublishModal` sube
-  foto/boleta al bucket `foro` antes de insertar el row. Este commit estrena
-  el patrón de Storage que reutilizan los siguientes.
 - [ ] `feat(reportar): persist reports with storage photos` —
   `ReportarScreen.js`. Sube la foto al bucket `reportes`, inserta en
   `reportes`. Mantener la lógica de matching de imágenes existente.
