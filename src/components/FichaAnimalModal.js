@@ -72,6 +72,7 @@ export default function FichaAnimalModal({ animal, org, visible, onClose }) {
               <Image
                 source={{ uri: animal.foto }}
                 style={styles.headerImage}
+                resizeMode="contain"
                 onError={() => setImgError(true)}
               />
             )}
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
   },
   header: {
     width: '100%',
-    height: 180,
+    height: 240,
     backgroundColor: COLORS.lightGray,
     position: 'relative',
   },

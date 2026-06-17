@@ -77,6 +77,7 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
           <Image
             source={{ uri: animal.foto }}
             style={styles.cardImage}
+            resizeMode="contain"
             onError={() => setImgError(true)}
           />
         )}
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: '100%',
-    height: 180,
+    height: 280,
     backgroundColor: COLORS.lightGray,
   },
   cardImagePlaceholder: {
