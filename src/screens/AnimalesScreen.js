@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../lib/supabase';
@@ -95,7 +96,7 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
         <View style={styles.zonaRow}>
           <Ionicons name="location-outline" size={14} color={COLORS.gray} />
           <Text style={styles.zonaText}>
-            {animal.zona} ({animal.comuna})
+            {animal.zona}{animal.comuna ? ` (${animal.comuna})` : ''}
           </Text>
         </View>
         {org && (
@@ -156,25 +157,31 @@ export default function AnimalesScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState(null);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const { data, error: fetchError } = await supabase
-        .from('animales')
-        .select('*, organizaciones(*)')
-        .order('created_at', { ascending: false });
-      if (!mounted) return;
-      if (fetchError) {
-        setError(fetchError.message);
-      } else {
-        setAnimales((data ?? []).map(mapAnimalRow));
-      }
-      setLoading(false);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  // Refetch cada vez que el tab gana foco para que un animal recién
+  // reportado vía /reportar aparezca al volver al catálogo (sin esto
+  // el Tab.Navigator no remonta la screen y la lista queda cacheada).
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      (async () => {
+        const { data, error: fetchError } = await supabase
+          .from('animales')
+          .select('*, organizaciones(*)')
+          .order('created_at', { ascending: false });
+        if (!mounted) return;
+        if (fetchError) {
+          setError(fetchError.message);
+        } else {
+          setError(null);
+          setAnimales((data ?? []).map(mapAnimalRow));
+        }
+        setLoading(false);
+      })();
+      return () => {
+        mounted = false;
+      };
+    }, [])
+  );
 
   const filtrarAnimales = () => {
     if (filtro === 'todos') return animales;

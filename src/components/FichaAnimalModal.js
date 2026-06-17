@@ -101,7 +101,7 @@ export default function FichaAnimalModal({ animal, org, visible, onClose }) {
             <View style={styles.zoneRow}>
               <Ionicons name="location" size={14} color={COLORS.gray} />
               <Text style={styles.zoneText}>
-                {animal.zona} ({animal.comuna})
+                {animal.zona}{animal.comuna ? ` (${animal.comuna})` : ''}
               </Text>
             </View>
 

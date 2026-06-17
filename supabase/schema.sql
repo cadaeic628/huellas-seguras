@@ -423,6 +423,88 @@ begin
 end;
 $$;
 
+-- Permite a un usuario normal reportar un animal que NO está en el catálogo:
+-- crea la fila en `animales` (asignándole una org existente como dueña
+-- inicial, preferentemente una de la misma comuna) y la fila ligada en
+-- `reportes`. Sin esto, la RLS de animales solo permite insertar a la
+-- fundación dueña del organizacion_id, y los usuarios normales no podrían
+-- crear el row del animal.
+create or replace function public.reportar_animal_nuevo(
+  p_nombre text,
+  p_tipo text,
+  p_estado text,
+  p_zona text,
+  p_comuna text,
+  p_descripcion text,
+  p_foto_url text,
+  p_ubicacion text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+  v_org_id uuid;
+  v_animal_id uuid;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  -- Selecciona una organización dueña: 1) match exacto de comuna sede;
+  -- 2) org que opera en la comuna; 3) cualquiera disponible.
+  select id into v_org_id
+  from public.organizaciones
+  where p_comuna is not null and comuna = p_comuna
+  limit 1;
+
+  if v_org_id is null and p_comuna is not null then
+    select id into v_org_id
+    from public.organizaciones
+    where p_comuna = any(comunas_operacion)
+    limit 1;
+  end if;
+
+  if v_org_id is null then
+    select id into v_org_id from public.organizaciones limit 1;
+  end if;
+
+  if v_org_id is null then
+    raise exception 'No hay ninguna organización registrada todavía. Pide a una fundación que se registre primero.';
+  end if;
+
+  insert into public.animales (
+    nombre, tipo, estado, zona, comuna, descripcion, foto_url, organizacion_id
+  ) values (
+    coalesce(nullif(trim(p_nombre), ''), 'Sin nombre'),
+    p_tipo,
+    p_estado,
+    p_zona,
+    p_comuna,
+    p_descripcion,
+    p_foto_url,
+    v_org_id
+  )
+  returning id into v_animal_id;
+
+  insert into public.reportes (
+    user_id, animal_id, foto_url, ubicacion, descripcion, estado_observado
+  ) values (
+    v_user_id,
+    v_animal_id,
+    p_foto_url,
+    p_ubicacion,
+    p_descripcion,
+    p_estado
+  );
+
+  return v_animal_id;
+end;
+$$;
+
 -- Permite al usuario autenticado borrar su propia cuenta. El cliente con anon
 -- key no puede tocar auth.users, así que exponemos esto como RPC. El cascade
 -- de public.users -> organizaciones / animales / etc. limpia el resto.

@@ -127,6 +127,10 @@ export default function ReportarScreen() {
   const [ubicacion, setUbicacion] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [estado, setEstado] = useState('');
+  // Campos extra solo cuando registrarNuevo === true (alimentan el RPC
+  // reportar_animal_nuevo que crea la fila en animales).
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoTipo, setNuevoTipo] = useState('Perro');
 
   const [fotoUri, setFotoUri] = useState(null);
   const [matches, setMatches] = useState([]); // [{animal, similarity, distance}]
@@ -183,6 +187,8 @@ export default function ReportarScreen() {
     setUbicacion('');
     setDescripcion('');
     setEstado('');
+    setNuevoNombre('');
+    setNuevoTipo('Perro');
     setFotoUri(null);
     setMatches([]);
   };
@@ -357,25 +363,38 @@ export default function ReportarScreen() {
     setSubmitting(true);
     try {
       const fotoUrl = fotoUri ? await uploadToReportes(fotoUri, user.id) : null;
-      const { error: insertError } = await supabase.from('reportes').insert({
-        user_id: user.id,
-        animal_id: animalSeleccionado?.id ?? null,
-        foto_url: fotoUrl,
-        ubicacion: ubicacion.trim(),
-        descripcion: descripcion.trim(),
-        estado_observado: estado,
-      });
-      if (insertError) throw insertError;
 
       let mensaje;
-      if (animalSeleccionado) {
-        const org = animalSeleccionado.org;
+      if (registrarNuevo) {
+        // Animal nuevo: el RPC crea la fila en animales + la fila en
+        // reportes en una sola transacción y devuelve el animal_id.
+        const { error: rpcError } = await supabase.rpc('reportar_animal_nuevo', {
+          p_nombre: nuevoNombre.trim(),
+          p_tipo: nuevoTipo,
+          p_estado: estado,
+          p_zona: ubicacion.trim(),
+          p_comuna: null,
+          p_descripcion: descripcion.trim(),
+          p_foto_url: fotoUrl,
+          p_ubicacion: ubicacion.trim(),
+        });
+        if (rpcError) throw rpcError;
+        mensaje =
+          'Gracias. Registramos el animal en el catálogo y notificamos a una organización para que se haga cargo.';
+      } else {
+        const { error: insertError } = await supabase.from('reportes').insert({
+          user_id: user.id,
+          animal_id: animalSeleccionado?.id ?? null,
+          foto_url: fotoUrl,
+          ubicacion: ubicacion.trim(),
+          descripcion: descripcion.trim(),
+          estado_observado: estado,
+        });
+        if (insertError) throw insertError;
+        const org = animalSeleccionado?.org;
         mensaje = org
           ? `Gracias. Vinculamos tu avistamiento a ${animalSeleccionado.nombre}. Notificamos a ${org.nombre}${org.telefono ? ` (${org.telefono})` : ''}.`
           : `Gracias. Vinculamos tu avistamiento a ${animalSeleccionado.nombre}.`;
-      } else {
-        mensaje =
-          'Gracias. Registramos el reporte y notificamos a la organización más cercana.';
       }
       reset();
       setSubmitFeedback({ ok: true, text: mensaje });
@@ -620,6 +639,45 @@ export default function ReportarScreen() {
           {(animalSeleccionado || registrarNuevo) && (
             <View style={styles.formulario}>
               <Text style={styles.formTitle}>Detalles del avistamiento</Text>
+
+              {registrarNuevo && (
+                <>
+                  <Text style={styles.label}>Nombre temporal (opcional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder='Ej: "Manchitas" — déjalo vacío si no sabes'
+                    value={nuevoNombre}
+                    onChangeText={setNuevoNombre}
+                    placeholderTextColor={COLORS.gray}
+                    editable={!submitting}
+                    maxLength={40}
+                  />
+
+                  <Text style={styles.label}>Tipo de animal</Text>
+                  <View style={styles.tipoRow}>
+                    {['Perro', 'Perra', 'Gato', 'Gata'].map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[
+                          styles.tipoOption,
+                          nuevoTipo === t && styles.tipoOptionActivo,
+                        ]}
+                        onPress={() => setNuevoTipo(t)}
+                        disabled={submitting}
+                      >
+                        <Text
+                          style={[
+                            styles.tipoOptionText,
+                            nuevoTipo === t && styles.tipoOptionTextActivo,
+                          ]}
+                        >
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
 
               <Text style={styles.label}>Ubicación</Text>
               <TextInput
@@ -1056,6 +1114,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 4,
+  },
+  tipoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  tipoOption: {
+    flexGrow: 1,
+    flexBasis: '22%',
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.background,
+    marginHorizontal: 3,
+    marginBottom: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.lightGray,
+  },
+  tipoOptionActivo: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  tipoOptionText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tipoOptionTextActivo: {
+    color: COLORS.white,
   },
   estadoOption: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../lib/supabase';
@@ -242,29 +242,35 @@ export default function MapaScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const [aResp, vResp] = await Promise.all([
-        supabase
-          .from('animales')
-          .select('*, organizaciones(*)')
-          .is('adoptado_por', null)
-          .not('lat', 'is', null)
-          .not('lng', 'is', null),
-        supabase.from('veterinarias').select('*').order('nombre'),
-      ]);
-      if (!mounted) return;
-      if (aResp.error) setError(aResp.error.message);
-      else if (vResp.error) setError(vResp.error.message);
-      setAnimales((aResp.data ?? []).map(mapAnimalRow));
-      setVeterinarias(vResp.data ?? []);
-      setLoading(false);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  // Refetch al ganar foco — el Tab.Navigator no remonta la screen, así
+  // que sin esto un animal reportado desde /reportar no aparecería en
+  // el mapa hasta recargar la app.
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      (async () => {
+        const [aResp, vResp] = await Promise.all([
+          supabase
+            .from('animales')
+            .select('*, organizaciones(*)')
+            .is('adoptado_por', null)
+            .not('lat', 'is', null)
+            .not('lng', 'is', null),
+          supabase.from('veterinarias').select('*').order('nombre'),
+        ]);
+        if (!mounted) return;
+        if (aResp.error) setError(aResp.error.message);
+        else if (vResp.error) setError(vResp.error.message);
+        else setError(null);
+        setAnimales((aResp.data ?? []).map(mapAnimalRow));
+        setVeterinarias(vResp.data ?? []);
+        setLoading(false);
+      })();
+      return () => {
+        mounted = false;
+      };
+    }, [])
+  );
 
   const handleSelectAnimal = (a) => {
     setImgError(false);
@@ -402,7 +408,7 @@ export default function MapaScreen() {
                 <View style={styles.modalRow}>
                   <Ionicons name="location-outline" size={14} color={COLORS.gray} />
                   <Text style={styles.modalSmall}>
-                    {selectedAnimal.zona} ({selectedAnimal.comuna})
+                    {selectedAnimal.zona}{selectedAnimal.comuna ? ` (${selectedAnimal.comuna})` : ''}
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.primaryButton} onPress={handleVerFicha}>
