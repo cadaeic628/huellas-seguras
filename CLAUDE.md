@@ -155,11 +155,17 @@ seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
   animales seleccionados, y dispara un re-fetch del feed. Este commit
   estrenó las policies de `storage.objects` en `schema.sql` y la
   mini-sección "Patrón para subir un archivo a Storage" en este archivo.
+- [x] `feat(reportar): persist reports with storage photos` —
+  `ReportarScreen.js` carga el catálogo desde `animales` (con
+  `organizaciones(id, nombre, telefono)` para el ack post-envío),
+  alimenta el matcher visual con esa data y, al enviar, sube la foto
+  al bucket `reportes` e inserta en `public.reportes` con `user_id`,
+  `animal_id` (null si "Registrar nuevo"), `ubicacion`, `descripcion`
+  y `estado_observado`. Schema nuevo: columna `estado_observado` en
+  `reportes` (saludable/observacion/urgente) — la columna `estado`
+  preexistente queda para el procesamiento del reporte.
 
 **Pendiente** (orden sugerido):
-- [ ] `feat(reportar): persist reports with storage photos` —
-  `ReportarScreen.js`. Sube la foto al bucket `reportes`, inserta en
-  `reportes`. Mantener la lógica de matching de imágenes existente.
 - [ ] `feat(perfil): load aggregates from supabase` — `PerfilScreen.js`.
   Reemplazar `getAnimalesApadrinadosPorUsuario`, `getDonacionesDeUsuario`, etc.
   por queries.

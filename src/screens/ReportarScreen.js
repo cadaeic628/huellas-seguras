@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,13 +14,54 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../constants/colors';
-import { ANIMALS, getOrganizacionDeAnimal } from '../data/mockData';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import {
   computeHash,
   precomputeCatalogHashes,
   rankBySimilarity,
 } from '../utils/imageSimilarity';
 import WebCamera from '../components/WebCamera';
+
+// Mapea una row de `animales` (con join a `organizaciones`) al shape que
+// usan el matcher visual y la UI de esta pantalla.
+function mapAnimalRow(row) {
+  const orgRow = row.organizaciones;
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    tipo: row.tipo,
+    estado: row.estado,
+    zona: row.zona,
+    comuna: row.comuna,
+    foto: row.foto_url,
+    organizacionId: row.organizacion_id,
+    org: orgRow
+      ? {
+          id: orgRow.id,
+          nombre: orgRow.nombre,
+          telefono: orgRow.telefono,
+        }
+      : null,
+  };
+}
+
+// Sube una URI local (web blob:/data:, native file:) al bucket `reportes`
+// y devuelve la URL pública. Mismo patrón que `uploadToForo` (ver
+// CLAUDE.md → "Patrón para subir un archivo a Storage").
+async function uploadToReportes(uri, userId) {
+  const res = await fetch(uri);
+  const blob = await res.blob();
+  const contentType = blob.type || 'image/jpeg';
+  const ext = (contentType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const { error: uploadError } = await supabase.storage
+    .from('reportes')
+    .upload(path, blob, { contentType });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from('reportes').getPublicUrl(path);
+  return data.publicUrl;
+}
 
 function SimilarCard({ animal, similarity, seleccionado, onSeleccionar }) {
   const [imgError, setImgError] = useState(false);
@@ -45,7 +86,9 @@ function SimilarCard({ animal, similarity, seleccionado, onSeleccionar }) {
       )}
       <View style={styles.similarInfo}>
         <Text style={styles.similarName}>{animal.nombre}</Text>
-        <Text style={styles.similarId}>{animal.id}</Text>
+        <Text style={styles.similarId} numberOfLines={1}>
+          {animal.id.slice(0, 8)}
+        </Text>
         <View style={styles.similarRow}>
           <Ionicons name="location-outline" size={12} color={COLORS.gray} />
           <Text style={styles.similarZona}>
@@ -72,6 +115,12 @@ function SimilarCard({ animal, similarity, seleccionado, onSeleccionar }) {
 }
 
 export default function ReportarScreen() {
+  const { user } = useAuth();
+
+  const [catalogo, setCatalogo] = useState(null);
+  const [catalogoError, setCatalogoError] = useState(null);
+  const [catalogoListo, setCatalogoListo] = useState(false);
+
   const [paso, setPaso] = useState('inicio');
   const [animalSeleccionado, setAnimalSeleccionado] = useState(null);
   const [registrarNuevo, setRegistrarNuevo] = useState(false);
@@ -81,21 +130,37 @@ export default function ReportarScreen() {
 
   const [fotoUri, setFotoUri] = useState(null);
   const [matches, setMatches] = useState([]); // [{animal, similarity, distance}]
-  const [catalogoListo, setCatalogoListo] = useState(false);
   const [webCamVisible, setWebCamVisible] = useState(false);
   const [tipoCamara, setTipoCamara] = useState('back'); // 'back' | 'front'
 
-  // Indexamos el catálogo en background una sola vez.
-  const indexadoIniciado = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+
   useEffect(() => {
-    if (indexadoIniciado.current) return;
-    indexadoIniciado.current = true;
-    precomputeCatalogHashes(ANIMALS)
-      .then(() => setCatalogoListo(true))
-      .catch((e) => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('animales')
+        .select(
+          'id, nombre, tipo, estado, zona, comuna, foto_url, organizacion_id, organizaciones(id, nombre, telefono)'
+        );
+      if (!mounted) return;
+      if (error) {
+        setCatalogoError(error.message);
+        setCatalogo([]);
+        return;
+      }
+      const mapped = (data ?? []).map(mapAnimalRow);
+      setCatalogo(mapped);
+      try {
+        await precomputeCatalogHashes(mapped);
+      } catch (e) {
         console.warn('[Reportar] Error indexando catálogo:', e);
-        setCatalogoListo(true); // Aun así dejamos seguir; las que sirvieron, sirven.
-      });
+      }
+      if (mounted) setCatalogoListo(true);
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const reset = () => {
@@ -110,16 +175,16 @@ export default function ReportarScreen() {
   };
 
   const procesarFoto = async (uri) => {
+    if (!catalogo) return;
     setFotoUri(uri);
     setPaso('analizando');
     try {
-      // Aseguramos que el catálogo esté indexado antes de comparar.
       if (!catalogoListo) {
-        await precomputeCatalogHashes(ANIMALS);
+        await precomputeCatalogHashes(catalogo);
         setCatalogoListo(true);
       }
       const targetHash = await computeHash(uri);
-      const top = rankBySimilarity(ANIMALS, targetHash, 3);
+      const top = rankBySimilarity(catalogo, targetHash, 3);
       setMatches(top);
       setPaso('resultado');
     } catch (e) {
@@ -133,6 +198,7 @@ export default function ReportarScreen() {
   };
 
   const abrirCamara = async () => {
+    if (!catalogo) return;
     // En web usamos nuestro modal con getUserMedia. expo-image-picker en web
     // NO abre la cámara real (cae al file picker).
     if (Platform.OS === 'web') {
@@ -179,6 +245,7 @@ export default function ReportarScreen() {
   };
 
   const abrirGaleria = async () => {
+    if (!catalogo) return;
     try {
       if (Platform.OS !== 'web') {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -215,26 +282,53 @@ export default function ReportarScreen() {
     setAnimalSeleccionado(null);
   };
 
-  const handleEnviar = () => {
+  const handleEnviar = async () => {
+    if (submitting) return;
     if (!ubicacion.trim() || !descripcion.trim() || !estado.trim()) {
       Alert.alert('Faltan datos', 'Por favor completa todos los campos.');
       return;
     }
-    let mensaje;
-    if (animalSeleccionado) {
-      const org = getOrganizacionDeAnimal(animalSeleccionado);
-      mensaje = `Gracias. Hemos vinculado tu avistamiento a ${animalSeleccionado.nombre} (${animalSeleccionado.id}). Notificamos a ${org.nombre} (${org.telefono}) para coordinar la próxima visita.`;
-    } else {
-      mensaje =
-        'Gracias. Hemos registrado un nuevo animal y notificado a la organización más cercana.';
+    if (!user) {
+      Alert.alert('Sesión requerida', 'Debes iniciar sesión para reportar.');
+      return;
     }
-    Alert.alert('Reporte enviado', mensaje, [
-      { text: 'Aceptar', onPress: reset },
-    ]);
+    setSubmitting(true);
+    try {
+      const fotoUrl = fotoUri ? await uploadToReportes(fotoUri, user.id) : null;
+      const { error: insertError } = await supabase.from('reportes').insert({
+        user_id: user.id,
+        animal_id: animalSeleccionado?.id ?? null,
+        foto_url: fotoUrl,
+        ubicacion: ubicacion.trim(),
+        descripcion: descripcion.trim(),
+        estado_observado: estado,
+      });
+      if (insertError) throw insertError;
+
+      let mensaje;
+      if (animalSeleccionado) {
+        const org = animalSeleccionado.org;
+        mensaje = org
+          ? `Gracias. Hemos vinculado tu avistamiento a ${animalSeleccionado.nombre}. Notificamos a ${org.nombre}${org.telefono ? ` (${org.telefono})` : ''} para coordinar la próxima visita.`
+          : `Gracias. Hemos vinculado tu avistamiento a ${animalSeleccionado.nombre}.`;
+      } else {
+        mensaje =
+          'Gracias. Hemos registrado un nuevo animal y notificado a la organización más cercana.';
+      }
+      Alert.alert('Reporte enviado', mensaje, [
+        { text: 'Aceptar', onPress: reset },
+      ]);
+    } catch (err) {
+      Alert.alert('No se pudo enviar', err.message || 'Error desconocido.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const mejorPct =
     matches.length > 0 ? Math.round(matches[0].similarity * 100) : null;
+
+  const catalogoCargando = catalogo == null;
 
   return (
     <Fragment>
@@ -243,6 +337,15 @@ export default function ReportarScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
+      {catalogoError && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={16} color={COLORS.white} />
+          <Text style={styles.errorBannerText}>
+            No pudimos cargar el catálogo: {catalogoError}
+          </Text>
+        </View>
+      )}
+
       {paso === 'inicio' && (
         <View style={styles.uploadBox}>
           <Ionicons name="camera" size={64} color={COLORS.primary} />
@@ -295,24 +398,37 @@ export default function ReportarScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.uploadButton} onPress={abrirCamara}>
+          <TouchableOpacity
+            style={[
+              styles.uploadButton,
+              catalogoCargando && styles.buttonDisabled,
+            ]}
+            onPress={abrirCamara}
+            disabled={catalogoCargando}
+          >
             <Ionicons name="camera" size={20} color={COLORS.white} />
             <Text style={styles.uploadButtonText}>Abrir cámara</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.secondaryButton}
+            style={[
+              styles.secondaryButton,
+              catalogoCargando && styles.buttonDisabled,
+            ]}
             onPress={abrirGaleria}
+            disabled={catalogoCargando}
           >
             <Ionicons name="images" size={18} color={COLORS.primary} />
             <Text style={styles.secondaryButtonText}>
               Elegir desde galería
             </Text>
           </TouchableOpacity>
-          {!catalogoListo && (
+          {catalogoCargando ? (
+            <Text style={styles.indexHint}>Cargando catálogo…</Text>
+          ) : !catalogoListo ? (
             <Text style={styles.indexHint}>
               Indexando catálogo en segundo plano…
             </Text>
-          )}
+          ) : null}
         </View>
       )}
 
@@ -384,13 +500,13 @@ export default function ReportarScreen() {
             </Text>
           </TouchableOpacity>
 
-          {animalSeleccionado && (
+          {animalSeleccionado?.org && (
             <View style={styles.orgInfoBox}>
               <Ionicons name="business" size={18} color={COLORS.primary} />
               <Text style={styles.orgInfoText}>
                 Este animal lo atiende:{' '}
                 <Text style={styles.orgInfoBold}>
-                  {getOrganizacionDeAnimal(animalSeleccionado).nombre}
+                  {animalSeleccionado.org.nombre}
                 </Text>
               </Text>
             </View>
@@ -407,6 +523,7 @@ export default function ReportarScreen() {
                 value={ubicacion}
                 onChangeText={setUbicacion}
                 placeholderTextColor={COLORS.gray}
+                editable={!submitting}
               />
 
               <Text style={styles.label}>Descripción</Text>
@@ -417,6 +534,7 @@ export default function ReportarScreen() {
                 onChangeText={setDescripcion}
                 multiline
                 placeholderTextColor={COLORS.gray}
+                editable={!submitting}
               />
 
               <Text style={styles.label}>Estado observado</Text>
@@ -433,6 +551,7 @@ export default function ReportarScreen() {
                       estado === e.key && styles.estadoOptionActivo,
                     ]}
                     onPress={() => setEstado(e.key)}
+                    disabled={submitting}
                   >
                     <Text
                       style={[
@@ -447,11 +566,21 @@ export default function ReportarScreen() {
               </View>
 
               <TouchableOpacity
-                style={styles.enviarButton}
+                style={[
+                  styles.enviarButton,
+                  submitting && styles.buttonDisabled,
+                ]}
                 onPress={handleEnviar}
+                disabled={submitting}
               >
-                <Ionicons name="send" size={18} color={COLORS.white} />
-                <Text style={styles.enviarButtonText}>Enviar reporte</Text>
+                {submitting ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={18} color={COLORS.white} />
+                    <Text style={styles.enviarButtonText}>Enviar reporte</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           )}
@@ -481,6 +610,21 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: COLORS.white,
+    fontSize: 12,
+    marginLeft: 6,
+    flex: 1,
   },
   uploadBox: {
     backgroundColor: COLORS.white,
@@ -570,6 +714,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
+  buttonDisabled: { opacity: 0.5 },
   loadingBox: {
     alignItems: 'center',
     paddingVertical: 80,

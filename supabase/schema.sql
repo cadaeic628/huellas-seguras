@@ -88,12 +88,21 @@ create table if not exists public.reportes (
   foto_url text,
   ubicacion text,
   descripcion text,
+  -- estado del *reporte* (lo administra el equipo / moderación)
   estado text not null default 'recibido'
     check (estado in ('recibido', 'en revisión', 'verificado')),
+  -- estado *observado* del animal por quien reporta (lo elige el usuario)
+  estado_observado text
+    check (estado_observado in ('saludable', 'observacion', 'urgente')),
   created_at timestamptz not null default now()
 );
 
 create index if not exists reportes_user_idx on public.reportes(user_id);
+
+-- Migración suave para installs previos a la columna estado_observado.
+alter table public.reportes
+  add column if not exists estado_observado text
+  check (estado_observado in ('saludable', 'observacion', 'urgente'));
 
 create table if not exists public.donaciones (
   id uuid primary key default gen_random_uuid(),
