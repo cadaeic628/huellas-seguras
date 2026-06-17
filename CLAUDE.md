@@ -8,31 +8,39 @@ Su objetivo es que una sesión nueva pueda colaborar sin re-explorar todo el rep
 ## Convenciones del proyecto
 
 - **Stack**: Expo SDK 50, React Native 0.73, React 18.2, `@react-navigation/bottom-tabs` v6, Supabase (Postgres + Auth + Storage).
-- **Datos**: Auth y catálogo de animales (`AnimalesScreen`) viven en Supabase. `src/data/mockData.js` aún sostiene las pantallas que faltan migrar (Donar, Foro, Reportar, Perfil, Mapa). La migración se hace pantalla por pantalla (ver Roadmap §1).
-- **Seed**: `supabase/seed.sql` tiene 5 organizaciones y 10 animales con UUIDs fijos, idempotente. Re-correrlo en SQL Editor cuando se necesite repoblar.
-- **Cliente Supabase**: `src/lib/supabase.js` exporta `supabase`, leyendo URL y anon key desde `app.json` → `expo.extra`. La anon key es pública por diseño; la `service_role` NUNCA se commitea.
+- **Datos**: 100% en Supabase. Auth, catálogo de animales, fundaciones, donaciones, foro, reportes y veterinarias viven en `public.*` (ver `supabase/schema.sql`).
+- **Seed**: `supabase/seed.sql` es un seed mínimo (1 organización placeholder + 3 animales + 2 veterinarias). Borra los placeholders previos (`user_id is null`) antes de insertar, así que es seguro re-correrlo. Las fundaciones reales se registran vía signup desde la app y no las toca.
+- **Cliente Supabase**: `src/lib/supabase.js` exporta `supabase`, leyendo URL y anon key desde `app.json` → `expo.extra`. En web usa `localStorage` (default del SDK) y en nativo `AsyncStorage` (cargado con `require` solo si `Platform.OS !== 'web'` para que no entre al bundle web).
 - **Esquema DB**: vive en `supabase/schema.sql`. Es idempotente; al modificar tablas, RLS o RPCs, actualizar ese archivo y re-correrlo en el SQL Editor.
 - **Versión del SDK**: `@supabase/supabase-js` está fijo en `2.45.6`. Versiones ≥ 2.50 introducen un import dinámico de `@opentelemetry/api` que Metro no resuelve y rompe el build de Vercel.
 - **Colores**: SIEMPRE desde `src/constants/colors.js` (`COLORS.*`). Nunca hardcodear hex.
 - **Iconos**: `@expo/vector-icons` (Ionicons). Para pares foco/no-foco usar `name` y `name-outline`.
-- **Imágenes externas**: Unsplash con `?w=...&h=...&fit=crop`. Hay helper `unsplash(id)` al inicio de `mockData.js`.
 - **Web vs nativo**: `expo-image-picker` en web cae a file picker. La cámara real en navegador vive en `src/components/WebCamera.web.js` (`getUserMedia`). El stub para nativo es `WebCamera.js`.
 - **Estilos**: `StyleSheet.create({...})` al final del archivo (mismo patrón que `DonarScreen.js` y `ForoScreen.js`).
+- **Layout en web**: cada pantalla limita su contenido con `width: '100%', maxWidth: <N>, alignSelf: 'center'` en el contentContainerStyle del ScrollView principal (720 para la mayoría, 900 para Mapa, 520 para Auth). Sin esto el contenido se estira full-width en monitores anchos.
 - **Idioma**: comentarios y UI en español. Código y mensajes de commit en inglés.
 - **Commits**: atómicos, sin firmar como Claude, sin `Co-Authored-By`. Formato `tipo(scope): mensaje`. Ej: `feat(foro): ...`, `data: ...`, `docs: ...`, `fix(animales): ...`.
 
 ## Estructura
 
 ```
-App.js                   # NavigationContainer + 6 tabs (centro elevado: Reportar)
+App.js                       # NavigationContainer + 6 tabs (centro elevado: Reportar)
 src/
-  constants/colors.js    # COLORS
-  data/mockData.js       # ORGANIZACIONES, ANIMALS, VETERINARIAS, ACTUALIZACIONES_FORO,
-                         # DONACIONES, REPORTES_USUARIO, APADRINAMIENTOS_USUARIO,
-                         # ADOPCIONES_USUARIO + helpers
-  components/            # Reutilizables (modal de ficha, cámara web)
-  screens/               # Una pantalla por tab
-  utils/                 # Lógica pura sin React (matching de imágenes)
+  constants/
+    colors.js                # COLORS
+    santiago.js              # SANTIAGO_CENTER + COMUNAS_SANTIAGO
+  utils/
+    animalEstado.js          # getEstadoLabel + getEstadoColor
+    imageSimilarity.js       # HSV + dHash matcher para ReportarScreen
+  lib/
+    supabase.js              # cliente compartido
+  contexts/
+    AuthContext.js           # useAuth() + signup/login/edit/eliminar
+  components/                # Reutilizables (modal de ficha, cámara web, redes)
+  screens/                   # Una pantalla por tab + AuthScreen
+supabase/
+  schema.sql                 # tablas, RLS, RPCs, storage policies
+  seed.sql                   # seed mínimo (placeholders)
 ```
 
 ## Auth (Supabase)
@@ -41,9 +49,7 @@ src/
   logout, signupNormal, signupFundacion, editarPerfil, editarOrganizacion,
   eliminarCuenta }`. Todas las funciones son `async` y devuelven `{ ok, error }`.
   `loading` es `true` mientras se hidrata la sesión inicial.
-- Sesión vía `supabase.auth`. En web persiste en `localStorage`; en nativo sin
-  AsyncStorage vive en memoria — al recargar móvil vuelve a deslogueado (ver
-  Roadmap §4 para fix).
+- Sesión vía `supabase.auth`. Persiste en `localStorage` (web) o `AsyncStorage` (nativo).
 - `App.js` envuelve todo en `<AuthProvider>` y `RootGate` muestra un splash
   mientras `loading`, `AuthScreen` si no hay sesión, o `MainNavigator` si la hay.
 - Dos roles: `normal` y `fundacion`, guardados en `public.users.role`. El trigger
@@ -63,46 +69,32 @@ src/
 ## Veterinarias
 
 Las veterinarias **no son usuarios de esta app**. Son entidades públicas que aparecen
-en el mapa (y en la ficha de cada animal, vía `getVeterinariaCercana`). Sus datos
-viven en `VETERINARIAS` de `mockData.js` (o en la tabla `veterinarias` cuando exista
-DB) y los administra el equipo del proyecto, no un usuario logueado. A futuro existirá
-una plataforma separada para veterinarias; este repo no debe agregar registro ni
-login para ese rol.
+en el mapa y los administra el equipo del proyecto vía SQL Editor (o service_role).
+Tabla `public.veterinarias` con SELECT público y sin policies de escritura — solo
+service_role puede tocarla. A futuro existirá una plataforma separada para
+veterinarias; este repo no debe agregar registro ni login para ese rol.
 
 ## Trabajar con esta base
 
 - Antes de tocar una pantalla, lee la pantalla análoga existente y respeta su patrón
   (cards, modales, FAB, chips). El estilo visual debe ser coherente.
-- Para una feature nueva sobre datos ya migrados, agrega tablas/columnas en
-  `supabase/schema.sql` y consume vía el cliente. Para pantallas aún no migradas
-  (ver Roadmap §1), extiende `mockData.js`.
+- Para una feature nueva, agrega tablas/columnas en `supabase/schema.sql`, RLS si
+  aplica, y consume vía el cliente. Cada pantalla mapea snake_case → camelCase con
+  un helper local (`mapAnimalRow`, `mapOrgRow`, etc.) — no hay un mapper compartido
+  porque cada pantalla pide subconjuntos distintos.
 - Para flujos con formulario + adjuntos, copia el patrón de `PublishModal` de
   `ForoScreen.js`.
-
-### Patrón para migrar una pantalla de `mockData.js` a Supabase
-
-1. Reemplaza los imports de helpers (`getAnimalesDeOrganizacion`, etc.) por
-   llamadas al cliente: `await supabase.from('animales').select(...).eq(...)`.
-2. Carga en `useEffect` con un estado `loading` + `error`. Muestra
-   `<ActivityIndicator>` mientras carga y un banner si falla.
-3. Mapea nombres snake_case del DB a lo que la UI espera (ej:
-   `comunas_operacion` → `comunasOperacion`, `foto_url` → `foto`). Hazlo en un
-   helper local de la pantalla o en `src/lib/mappers.js` si se repite.
-4. Para escrituras (insert/update/delete), tras la mutación re-fetch o
-   actualiza el estado local de forma optimista.
-5. Para imágenes que vienen de `expo-image-picker` (URI local), súbelas con
-   `supabase.storage.from(<bucket>).upload(path, file)` y guarda la URL pública
-   en la columna `_url` correspondiente. Buckets ya creados: `avatars`,
-   `animales`, `reportes`, `foro`.
-6. Para mutaciones que la RLS estándar no cubre (ej: apadrinar un animal cuyo
-   `update` está restringido a la fundación dueña), expón un RPC SECURITY
-   DEFINER en `schema.sql` y llama con `supabase.rpc('nombre', { args })`.
+- Para mutaciones que la RLS estándar no cubre (ej: apadrinar un animal cuyo
+  `update` está restringido a la fundación dueña), expón un RPC SECURITY
+  DEFINER en `schema.sql` y llama con `supabase.rpc('nombre', { args })`. Ya
+  existen `apadrinar`, `adoptar` y `delete_self`.
 
 ### Patrón para subir un archivo a Storage
 
-Estrenado en `ForoScreen.js` (helper `uploadToForo`). Reutilizable como `uploadTo<bucket>`:
+Estrenado en `ForoScreen.js` (`uploadToForo`), reutilizado en `ReportarScreen.js`
+(`uploadToReportes`). Para nuevos buckets sigue el mismo patrón:
 
-1. `expo-image-picker` devuelve una URI (web `blob:` o nativo `file:`).
+1. `expo-image-picker` devuelve una URI (web `blob:`/`data:` o nativo `file:`).
 2. `const blob = await (await fetch(uri)).blob();` — funciona en ambos lados.
 3. Define un path con prefijo `<user_id>/...` para auditoría:
    `` `${userId}/${Date.now()}-foto.jpg` ``.
@@ -110,164 +102,35 @@ Estrenado en `ForoScreen.js` (helper `uploadToForo`). Reutilizable como `uploadT
 5. Guarda la URL pública: `supabase.storage.from('<bucket>').getPublicUrl(path).data.publicUrl`.
 6. Persiste esa URL en la columna `_url` (`foto_url`, `comprobante_url`, etc.).
 
-Las policies de `storage.objects` viven en `schema.sql` ("Storage: policies para los buckets de la app") y permiten escritura libre a `authenticated` en los 4 buckets. Para producción endurecer con checks de path.
+Las policies de `storage.objects` viven en `schema.sql` ("Storage: policies para los buckets de la app") y permiten escritura libre a `authenticated` en los 4 buckets (`avatars`, `animales`, `reportes`, `foro`). Para producción endurecer con checks de path.
+
+### Realtime
+
+Estrenado en `ForoScreen.js` para que las publicaciones nuevas aparezcan sin recargar:
+
+```js
+useEffect(() => {
+  const channel = supabase
+    .channel('foro_feed')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'foro_posts' },
+      () => { fetchFeed(); })  // re-fetch para resolver joins
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}, [fetchFeed]);
+```
+
+Requiere habilitar la tabla en Supabase Dashboard → Database → Replication. La RLS
+también aplica a realtime: el cliente solo recibe eventos de rows que podría leer
+con SELECT normal.
 
 ---
 
 # Roadmap (trabajo pendiente)
 
-Las secciones siguientes son **briefings autocontenidos** para que una sesión nueva
-pueda implementar cada feature sin más contexto. Implementar **una a la vez** en
-commits atómicos.
+Solo queda un ítem opcional. Todo lo demás se completó.
 
-## 1. Migración de pantallas a Supabase
-
-El setup (schema + cliente + RLS + Auth) ya está. Falta migrar las pantallas
-que aún leen de `mockData.js`. Hacer **una por commit** y probar antes de
-seguir. Cuando estén todas, borrar `mockData.js` en un commit de cierre.
-
-**Hecho**:
-- [x] `data: add supabase schema and client setup` — `supabase/schema.sql`
-  idempotente con tablas, trigger `handle_new_user`, RLS, RPCs (`apadrinar`,
-  `adoptar`, `delete_self`). Cliente en `src/lib/supabase.js`.
-- [x] `chore(config): wire supabase project credentials` — `app.json` →
-  `expo.extra` con URL y anon (publishable) key del proyecto.
-- [x] `feat(auth): migrate AuthContext to supabase` — `AuthContext.js` usa
-  `supabase.auth`. Splash de carga en `App.js` mientras hidrata la sesión.
-- [x] `fix(deps): pin @supabase/supabase-js to 2.45.6` — evita import de OTEL
-  que rompe Metro/Vercel.
-- [x] `feat(animales): load catalog from supabase` — `AnimalesScreen.js` lee
-  con join `animales, organizaciones(*)`, mapea snake → camelCase y dispara
-  los RPCs `apadrinar` / `adoptar` desde el modal de acción.
-  `FichaAnimalModal` acepta `org` como prop con fallback a
-  `getOrganizacionDeAnimal` de `mockData` para no romper Mapa/Perfil
-  mientras siguen pendientes. Seed inicial en `supabase/seed.sql`.
-- [x] `feat(donar): load orgs from supabase` — `DonarScreen.js` lee
-  `organizaciones` con join `animales(id, nombre, estado, zona)` para los
-  stats del card. El modal de datos bancarios estrena un formulario
-  "Registra tu aporte" que inserta en `donaciones` con `user_id` del
-  donante (RLS `donaciones_insert_self`).
-- [x] `feat(foro): load posts + publishing + storage uploads` —
-  `ForoScreen.js` lee `foro_posts` con join `organizaciones(nombre)` y
-  `foro_post_animales(animales(id, nombre, zona))`. `PublishModal` sube
-  foto/boleta al bucket `foro` (path `<user_id>/<ts>-<suffix>.<ext>`),
-  inserta en `foro_posts` y luego en `foro_post_animales` para los
-  animales seleccionados, y dispara un re-fetch del feed. Este commit
-  estrenó las policies de `storage.objects` en `schema.sql` y la
-  mini-sección "Patrón para subir un archivo a Storage" en este archivo.
-- [x] `feat(reportar): persist reports with storage photos` —
-  `ReportarScreen.js` carga el catálogo desde `animales` (con
-  `organizaciones(id, nombre, telefono)` para el ack post-envío),
-  alimenta el matcher visual con esa data y, al enviar, sube la foto
-  al bucket `reportes` e inserta en `public.reportes` con `user_id`,
-  `animal_id` (null si "Registrar nuevo"), `ubicacion`, `descripcion`
-  y `estado_observado`. Schema nuevo: columna `estado_observado` en
-  `reportes` (saludable/observacion/urgente) — la columna `estado`
-  preexistente queda para el procesamiento del reporte.
-
-**Pendiente** (orden sugerido):
-- [ ] `feat(perfil): load aggregates from supabase` — `PerfilScreen.js`.
-  Reemplazar `getAnimalesApadrinadosPorUsuario`, `getDonacionesDeUsuario`, etc.
-  por queries.
-- [ ] `feat(mapa): load animales y veterinarias from supabase` —
-  `MapaScreen.js`. Lectura de `animales` (con `lat`/`lng`) y `veterinarias`.
-- [ ] `refactor: drop mockData fallback` — borrar `src/data/mockData.js` y
-  cualquier import residual. Verificar que la app arranca solo con datos de
-  Supabase.
-
-**Notas**:
-- Las cuentas demo (`maria@example.com`, etc.) viven solo como referencia
-  histórica en commits viejos. Para probar hay que crearlas con signup real.
-- `supabase/seed.sql` ya tiene 5 orgs + 10 animales con UUIDs fijos para
-  arrancar. Es idempotente (`ON CONFLICT DO NOTHING`). Si una pantalla
-  futura necesita más datos seed, extender ese mismo archivo.
-
-## 2. Bug: animales adoptados muestran "Quiero adoptar"
-
-En `src/screens/AnimalesScreen.js`, los animales con `adoptado === true`
-(o `apadrinado === true`) siguen mostrando los botones "¡Quiero adoptar!" /
-"Quiero apadrinar". Si el usuario los toca, el RPC falla con "Animal ya
-tiene hogar" / "Animal ya tiene padrino" y el modal muestra el error —
-funcionalmente seguro, pero mal UX.
-
-**Fix**:
-- Si `animal.adoptado`, ocultar el botón "Quiero adoptar" y reemplazarlo por un
-  pill verde no clickeable "Ya tiene hogar" (o similar).
-- Si `animal.apadrinado`, el botón "Quiero apadrinar" debe deshabilitarse o
-  reemplazarse por "Ya tiene padrino".
-- Revisar consistencia: el filtro "Adoptados" hoy los deja ver, lo cual es
-  correcto — el problema es solo el botón.
-
-## 3. Headers alineados a la derecha
-
-Hoy los títulos del header (`title` en cada `<Tab.Screen>`) están centrados por
-defecto. Se quiere alinearlos a la derecha para que en una iteración futura quepa
-un logo a la izquierda.
-
-**Fix en `App.js`**:
-```js
-screenOptions={{
-  headerTitleAlign: 'right',  // o usar headerTitle: () => <Text>...</Text>
-  ...
-}}
-```
-
-Si `headerTitleAlign: 'right'` no respeta el padding en web, usar
-`headerTitle: (props) => <Text style={{...}}>{props.children}</Text>` con
-`textAlign: 'right'` y `width: '100%'`. Cuando llegue el logo, reemplazar por
-`headerLeft: () => <Image source={logo} />`.
-
-## 4. Persistir sesión en móvil con AsyncStorage
-
-Hoy en web la sesión persiste vía `localStorage` (default del SDK), pero en
-Android/iOS no hay storage configurado y al recargar el usuario queda
-deslogueado. Es UX aceptable mientras se desarrolla en web, no para producción
-móvil.
-
-**Fix**:
-1. `npx expo install @react-native-async-storage/async-storage`.
-2. En `src/lib/supabase.js`, importar y pasar al cliente:
-   ```js
-   import AsyncStorage from '@react-native-async-storage/async-storage';
-   // ...
-   createClient(URL, KEY, {
-     auth: {
-       storage: AsyncStorage,
-       autoRefreshToken: true,
-       persistSession: true,
-       detectSessionInUrl: false,
-     },
-   });
-   ```
-3. En web el SDK detecta `window.localStorage` y lo prefiere; pasar
-   `AsyncStorage` no rompe el caso web pero igual conviene gatear por
-   `Platform.OS !== 'web'` para no cargar AsyncStorage en el bundle web.
-
-## 5. Realtime: donaciones y foro_posts en vivo
-
-Supabase Realtime ya viene con el SDK. Habilitar en las tablas que importa que
-otros usuarios vean cambios sin recargar (foro, donaciones recibidas por la
-fundación, animales nuevos en el catálogo).
-
-**Pasos**:
-1. En Supabase Dashboard → Database → Replication, habilitar las tablas
-   relevantes (`foro_posts`, `donaciones`, `animales`).
-2. En la pantalla que escucha, subscribirse:
-   ```js
-   useEffect(() => {
-     const channel = supabase
-       .channel('foro')
-       .on('postgres_changes',
-         { event: 'INSERT', schema: 'public', table: 'foro_posts' },
-         (payload) => setPosts((prev) => [payload.new, ...prev]))
-       .subscribe();
-     return () => supabase.removeChannel(channel);
-   }, []);
-   ```
-3. Recordar que el filtro RLS aplica también a realtime: el cliente solo
-   recibe eventos de rows que podría leer con un SELECT normal.
-
-## 6. Actualizar Expo SDK + React Native
+## Actualizar Expo SDK + React Native
 
 SDK 50 y RN 0.73 están deprecados. RN 0.73 tiene CVEs publicados. No es urgente
 para taller, sí para producción real.
@@ -284,11 +147,10 @@ para taller, sí para producción real.
 
 # Cómo dejar este archivo útil al cerrar una feature
 
-Al terminar cualquier feature de este roadmap:
-1. Mover la sección correspondiente fuera del Roadmap y resumirla en una línea
-   en "Estado actual" si introduce una convención nueva.
-2. Si la feature definió un patrón replicable (ej: cómo subir imágenes a Supabase,
-   cómo escribir un screen con auth gating), agregar una mini-sección en
-   "Trabajar con esta base" con el patrón a copiar.
-3. Eliminar lo obsoleto: si el placeholder de auth desaparece, borrar
-   "Estado actual de auth".
+Al terminar una feature:
+1. Si introduce una **convención** nueva (formato, gating, layout), agregarla en
+   "Convenciones del proyecto".
+2. Si introduce un **patrón replicable** (Storage uploads, realtime, etc.),
+   agregar una mini-sección en "Trabajar con esta base" con el patrón a copiar.
+3. Si era un ítem del Roadmap, sacarlo. Si la feature introduce nueva deuda
+   técnica que vale la pena recordar, agregar un nuevo ítem al Roadmap.
