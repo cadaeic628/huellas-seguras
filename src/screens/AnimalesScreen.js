@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../lib/supabase';
-import { getEstadoLabel, getEstadoColor } from '../data/mockData';
+import { getEstadoLabel, getEstadoColor } from '../utils/animalEstado';
 import FichaAnimalModal from '../components/FichaAnimalModal';
 
 const FILTROS = [
@@ -106,20 +106,6 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
             </Text>
           </View>
         )}
-        {(animal.apadrinado || animal.adoptado) && (
-          <View style={styles.tagsRow}>
-            {animal.apadrinado && (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>Apadrinado</Text>
-              </View>
-            )}
-            {animal.adoptado && (
-              <View style={[styles.tag, { backgroundColor: COLORS.accent }]}>
-                <Text style={styles.tagText}>Adoptado</Text>
-              </View>
-            )}
-          </View>
-        )}
         <TouchableOpacity
           style={styles.fichaButton}
           onPress={() => onVerFicha(animal)}
@@ -128,18 +114,32 @@ function AnimalCard({ animal, onAccion, onVerFicha }) {
           <Text style={styles.fichaButtonText}>Ver ficha completa</Text>
         </TouchableOpacity>
         <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.primaryAction]}
-            onPress={() => onAccion(animal, 'adoptar')}
-          >
-            <Text style={styles.actionText}>¡Quiero adoptar!</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.secondaryAction]}
-            onPress={() => onAccion(animal, 'apadrinar')}
-          >
-            <Text style={styles.actionText}>Quiero apadrinar</Text>
-          </TouchableOpacity>
+          {animal.adoptado ? (
+            <View style={[styles.statusPill, styles.statusPillAdoptado]}>
+              <Ionicons name="home" size={14} color={COLORS.white} />
+              <Text style={styles.statusPillText}>Ya tiene hogar</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.primaryAction]}
+              onPress={() => onAccion(animal, 'adoptar')}
+            >
+              <Text style={styles.actionText}>¡Quiero adoptar!</Text>
+            </TouchableOpacity>
+          )}
+          {animal.apadrinado ? (
+            <View style={[styles.statusPill, styles.statusPillApadrinado]}>
+              <Ionicons name="heart" size={14} color={COLORS.white} />
+              <Text style={styles.statusPillText}>Ya tiene padrino</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.secondaryAction]}
+              onPress={() => onAccion(animal, 'apadrinar')}
+            >
+              <Text style={styles.actionText}>Quiero apadrinar</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </View>
@@ -439,6 +439,9 @@ const styles = StyleSheet.create({
   },
   lista: {
     padding: 12,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   card: {
     backgroundColor: COLORS.white,
@@ -517,21 +520,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary,
   },
-  tagsRow: {
+  statusPill: {
+    flex: 1,
     flexDirection: 'row',
-    marginTop: 8,
-  },
-  tag: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
     borderRadius: 8,
-    marginRight: 6,
+    marginHorizontal: 3,
   },
-  tagText: {
+  statusPillAdoptado: { backgroundColor: COLORS.healthy },
+  statusPillApadrinado: { backgroundColor: COLORS.accent },
+  statusPillText: {
     color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    fontSize: 12,
+    marginLeft: 5,
   },
   fichaButton: {
     flexDirection: 'row',

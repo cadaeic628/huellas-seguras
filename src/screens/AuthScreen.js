@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { COMUNAS_SANTIAGO } from '../data/mockData';
+import { COMUNAS_SANTIAGO } from '../constants/santiago';
 import OptionsPickerModal from '../components/OptionsPickerModal';
 import {
   isValidEmail,
@@ -649,7 +649,13 @@ function PrimaryButton({ onPress, disabled, icon, label }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { padding: 18, paddingBottom: 40 },
+  scroll: {
+    padding: 18,
+    paddingBottom: 40,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+  },
 
   brand: { alignItems: 'center', marginTop: 24, marginBottom: 18 },
   logoCircle: {

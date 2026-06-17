@@ -10,11 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import {
-  getEstadoLabel,
-  getEstadoColor,
-  getOrganizacionDeAnimal,
-} from '../data/mockData';
+import { getEstadoLabel, getEstadoColor } from '../utils/animalEstado';
 
 function Badge({ ok, labelTrue, labelFalse }) {
   return (
@@ -51,15 +47,11 @@ function DataRow({ icon, label, value }) {
   );
 }
 
-export default function FichaAnimalModal({ animal, org: orgProp, visible, onClose }) {
+export default function FichaAnimalModal({ animal, org, visible, onClose }) {
   const [imgError, setImgError] = useState(false);
 
   if (!animal) return null;
   const ficha = animal.ficha || {};
-  // Pantallas ya migradas a Supabase pasan org como prop (viene del join).
-  // El fallback al helper de mockData mantiene compat con MapaScreen y
-  // PerfilScreen mientras no se migren (ver Roadmap §1).
-  const org = orgProp ?? getOrganizacionDeAnimal(animal);
 
   return (
     <Modal
@@ -105,9 +97,7 @@ export default function FichaAnimalModal({ animal, org: orgProp, visible, onClos
           >
             {/* Identificación */}
             <Text style={styles.name}>{animal.nombre}</Text>
-            <Text style={styles.subtitle}>
-              {animal.tipo} · ID {animal.id}
-            </Text>
+            <Text style={styles.subtitle}>{animal.tipo}</Text>
             <View style={styles.zoneRow}>
               <Ionicons name="location" size={14} color={COLORS.gray} />
               <Text style={styles.zoneText}>
