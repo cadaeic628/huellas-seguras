@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useState } from 'react';
+import React, { Fragment, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -135,6 +135,14 @@ export default function ReportarScreen() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Drag & drop solo en web. La ref apunta al div del uploadBox (RN-web
+  // devuelve el HTMLElement directo). Guardamos procesarFoto en una ref
+  // para que el listener siempre llame a la versión más reciente sin
+  // tener que re-suscribirse en cada render.
+  const uploadBoxRef = useRef(null);
+  const procesarFotoRef = useRef(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -196,6 +204,55 @@ export default function ReportarScreen() {
       setPaso('inicio');
     }
   };
+
+  // Mantiene la ref apuntando al procesarFoto actual para que el handler
+  // del drop (anclado a través de addEventListener) use el último closure.
+  useEffect(() => {
+    procesarFotoRef.current = procesarFoto;
+  });
+
+  // Listeners de drag & drop sobre el uploadBox. Solo en web y mientras
+  // está en paso 'inicio'; antes el catálogo tiene que estar listo (sin
+  // catálogo, procesarFoto bailea).
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (paso !== 'inicio') return;
+    if (!catalogo) return;
+    const el = uploadBoxRef.current;
+    if (!el) return;
+
+    const onDragOver = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+    };
+    const onDragLeave = (e) => {
+      // dragleave también dispara al entrar a un hijo; chequea que
+      // efectivamente se haya salido del uploadBox.
+      if (!el.contains(e.relatedTarget)) setIsDragOver(false);
+    };
+    const onDrop = (e) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      if (!file.type?.startsWith('image/')) {
+        Alert.alert('Archivo no válido', 'Solo se aceptan imágenes.');
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      procesarFotoRef.current?.(url);
+    };
+
+    el.addEventListener('dragover', onDragOver);
+    el.addEventListener('dragleave', onDragLeave);
+    el.addEventListener('drop', onDrop);
+    return () => {
+      el.removeEventListener('dragover', onDragOver);
+      el.removeEventListener('dragleave', onDragLeave);
+      el.removeEventListener('drop', onDrop);
+    };
+  }, [paso, catalogo]);
 
   const abrirCamara = async () => {
     if (!catalogo) return;
@@ -347,9 +404,14 @@ export default function ReportarScreen() {
       )}
 
       {paso === 'inicio' && (
-        <View style={styles.uploadBox}>
+        <View
+          ref={uploadBoxRef}
+          style={[styles.uploadBox, isDragOver && styles.uploadBoxDragOver]}
+        >
           <Ionicons name="camera" size={64} color={COLORS.primary} />
-          <Text style={styles.uploadTitle}>Reportar animal</Text>
+          <Text style={styles.uploadTitle}>
+            {isDragOver ? 'Suelta la imagen aquí' : 'Reportar animal'}
+          </Text>
           <Text style={styles.uploadSubtitle}>
             Toma una foto del animal que viste. Compararemos la imagen con
             nuestro catálogo usando un algoritmo de parecido visual.
@@ -427,6 +489,10 @@ export default function ReportarScreen() {
           ) : !catalogoListo ? (
             <Text style={styles.indexHint}>
               Indexando catálogo en segundo plano…
+            </Text>
+          ) : Platform.OS === 'web' ? (
+            <Text style={styles.indexHint}>
+              …o arrastra una imagen aquí
             </Text>
           ) : null}
         </View>
@@ -638,6 +704,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.primary,
     borderStyle: 'dashed',
+  },
+  uploadBoxDragOver: {
+    backgroundColor: '#E8F4F2',
+    borderColor: COLORS.accent,
+    borderStyle: 'solid',
   },
   uploadTitle: {
     fontSize: 20,
