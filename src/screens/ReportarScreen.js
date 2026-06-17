@@ -134,6 +134,11 @@ export default function ReportarScreen() {
   const [tipoCamara, setTipoCamara] = useState('back'); // 'back' | 'front'
 
   const [submitting, setSubmitting] = useState(false);
+  // Feedback inline tras enviar. En RN-web `Alert.alert(title, msg, buttons)`
+  // ignora los buttons (no corre el onPress), así que no podemos depender
+  // del callback "Aceptar" para resetear el form. Usamos un banner que se
+  // auto-cierra.
+  const [submitFeedback, setSubmitFeedback] = useState(null); // { ok, text }
 
   // Drag & drop solo en web. La ref apunta al div del uploadBox (RN-web
   // devuelve el HTMLElement directo). Guardamos procesarFoto en una ref
@@ -366,21 +371,33 @@ export default function ReportarScreen() {
       if (animalSeleccionado) {
         const org = animalSeleccionado.org;
         mensaje = org
-          ? `Gracias. Hemos vinculado tu avistamiento a ${animalSeleccionado.nombre}. Notificamos a ${org.nombre}${org.telefono ? ` (${org.telefono})` : ''} para coordinar la próxima visita.`
-          : `Gracias. Hemos vinculado tu avistamiento a ${animalSeleccionado.nombre}.`;
+          ? `Gracias. Vinculamos tu avistamiento a ${animalSeleccionado.nombre}. Notificamos a ${org.nombre}${org.telefono ? ` (${org.telefono})` : ''}.`
+          : `Gracias. Vinculamos tu avistamiento a ${animalSeleccionado.nombre}.`;
       } else {
         mensaje =
-          'Gracias. Hemos registrado un nuevo animal y notificado a la organización más cercana.';
+          'Gracias. Registramos el reporte y notificamos a la organización más cercana.';
       }
-      Alert.alert('Reporte enviado', mensaje, [
-        { text: 'Aceptar', onPress: reset },
-      ]);
+      reset();
+      setSubmitFeedback({ ok: true, text: mensaje });
     } catch (err) {
-      Alert.alert('No se pudo enviar', err.message || 'Error desconocido.');
+      setSubmitFeedback({
+        ok: false,
+        text: err.message || 'No se pudo enviar el reporte. Intenta de nuevo.',
+      });
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Auto-cierra el banner de feedback. Éxito 6s, error 9s.
+  useEffect(() => {
+    if (!submitFeedback) return;
+    const t = setTimeout(
+      () => setSubmitFeedback(null),
+      submitFeedback.ok ? 6000 : 9000
+    );
+    return () => clearTimeout(t);
+  }, [submitFeedback]);
 
   const mejorPct =
     matches.length > 0 ? Math.round(matches[0].similarity * 100) : null;
@@ -400,6 +417,28 @@ export default function ReportarScreen() {
           <Text style={styles.errorBannerText}>
             No pudimos cargar el catálogo: {catalogoError}
           </Text>
+        </View>
+      )}
+
+      {submitFeedback && (
+        <View
+          style={[
+            styles.feedbackBanner,
+            submitFeedback.ok ? styles.feedbackBannerOk : styles.feedbackBannerErr,
+          ]}
+        >
+          <Ionicons
+            name={submitFeedback.ok ? 'checkmark-circle' : 'warning'}
+            size={18}
+            color={COLORS.white}
+          />
+          <Text style={styles.feedbackBannerText}>{submitFeedback.text}</Text>
+          <TouchableOpacity
+            onPress={() => setSubmitFeedback(null)}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={18} color={COLORS.white} />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -694,6 +733,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 6,
     flex: 1,
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  feedbackBannerOk: { backgroundColor: COLORS.healthy },
+  feedbackBannerErr: { backgroundColor: '#E63946' },
+  feedbackBannerText: {
+    flex: 1,
+    color: COLORS.white,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    marginHorizontal: 8,
   },
   uploadBox: {
     backgroundColor: COLORS.white,
