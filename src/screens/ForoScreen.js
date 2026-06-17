@@ -512,6 +512,26 @@ export default function ForoScreen() {
     };
   }, [fetchFeed]);
 
+  // Realtime: cuando otra fundación publica un post, re-fetch del feed.
+  // (Requiere habilitar `foro_posts` en Database → Replication del dashboard.)
+  // Re-fetch en vez de aplicar el payload `payload.new` porque necesitamos
+  // los joins de organizaciones y foro_post_animales para renderizar.
+  useEffect(() => {
+    const channel = supabase
+      .channel('foro_feed')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'foro_posts' },
+        () => {
+          fetchFeed();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchFeed]);
+
   useEffect(() => {
     if (!esFundacion || !fundacionId) {
       setAnimalesDeLaOrg([]);
@@ -624,7 +644,13 @@ export default function ForoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 100 },
+  content: {
+    padding: 16,
+    paddingBottom: 100,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
 
   headerBox: {
     backgroundColor: COLORS.white,
