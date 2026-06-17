@@ -9,22 +9,48 @@ import {
   Image,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import {
-  ANIMALS,
-  VETERINARIAS,
-  SANTIAGO_CENTER,
-  getEstadoLabel,
-  getEstadoColor,
-} from '../data/mockData';
+import { supabase } from '../lib/supabase';
+import { SANTIAGO_CENTER } from '../constants/santiago';
+import { getEstadoLabel, getEstadoColor } from '../utils/animalEstado';
 import FichaAnimalModal from '../components/FichaAnimalModal';
 import RedesSocialesRow from '../components/RedesSocialesRow';
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+
+function mapAnimalRow(row) {
+  const orgRow = row.organizaciones;
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    tipo: row.tipo,
+    estado: row.estado,
+    zona: row.zona,
+    comuna: row.comuna,
+    descripcion: row.descripcion,
+    foto: row.foto_url,
+    organizacionId: row.organizacion_id,
+    lat: row.lat,
+    lng: row.lng,
+    apadrinado: row.apadrinado_por != null,
+    adoptado: row.adoptado_por != null,
+    ficha: row.ficha ?? {},
+    org: orgRow
+      ? {
+          id: orgRow.id,
+          nombre: orgRow.nombre,
+          comuna: orgRow.comuna,
+          telefono: orgRow.telefono,
+          horario: orgRow.horario,
+        }
+      : null,
+  };
+}
 
 // Inyecta CSS/JS de Leaflet vía CDN (sólo en web)
 function loadLeaflet() {
@@ -52,7 +78,6 @@ function loadLeaflet() {
   });
 }
 
-// HTML para un marcador circular (animal)
 const animalMarkerHtml = (color) => `
   <div style="background:${color};width:32px;height:32px;border-radius:50%;
               border:3px solid #fff;display:flex;align-items:center;justify-content:center;
@@ -60,15 +85,13 @@ const animalMarkerHtml = (color) => `
     <span style="filter:brightness(0) invert(1);">🐾</span>
   </div>`;
 
-// HTML para un marcador cuadrado (veterinaria)
 const vetMarkerHtml = () => `
   <div style="background:${COLORS.vet};width:32px;height:32px;border-radius:6px;
               border:3px solid #fff;display:flex;align-items:center;justify-content:center;
               box-shadow:0 2px 6px rgba(0,0,0,0.35);color:#fff;font-weight:700;
               font-size:13px;line-height:1;">+</div>`;
 
-// === Mapa real con Leaflet (web) ===
-function LeafletMap({ onSelectAnimal, onSelectVet }) {
+function LeafletMap({ animales, veterinarias, onSelectAnimal, onSelectVet }) {
   const containerRef = useRef(null);
   const mapInstance = useRef(null);
 
@@ -89,8 +112,8 @@ function LeafletMap({ onSelectAnimal, onSelectVet }) {
         maxZoom: 19,
       }).addTo(map);
 
-      // Marcadores de animales
-      ANIMALS.filter((a) => !a.adoptado).forEach((animal) => {
+      animales.forEach((animal) => {
+        if (animal.lat == null || animal.lng == null) return;
         const icon = L.divIcon({
           className: 'hs-animal-marker',
           html: animalMarkerHtml(getEstadoColor(animal.estado)),
@@ -99,14 +122,14 @@ function LeafletMap({ onSelectAnimal, onSelectVet }) {
         });
         const marker = L.marker([animal.lat, animal.lng], { icon }).addTo(map);
         marker.bindTooltip(
-          `<b>${animal.nombre}</b> · ${animal.zona}`,
+          `<b>${animal.nombre}</b>${animal.zona ? ` · ${animal.zona}` : ''}`,
           { direction: 'top', offset: [0, -10] }
         );
         marker.on('click', () => onSelectAnimal(animal));
       });
 
-      // Marcadores de veterinarias
-      VETERINARIAS.forEach((vet) => {
+      veterinarias.forEach((vet) => {
+        if (vet.lat == null || vet.lng == null) return;
         const icon = L.divIcon({
           className: 'hs-vet-marker',
           html: vetMarkerHtml(),
@@ -131,24 +154,17 @@ function LeafletMap({ onSelectAnimal, onSelectVet }) {
         mapInstance.current = null;
       }
     };
-  }, [onSelectAnimal, onSelectVet]);
+  }, [animales, veterinarias, onSelectAnimal, onSelectVet]);
 
   return (
     <View style={styles.mapWrapper}>
-      <View
-        ref={containerRef}
-        style={styles.realMap}
-        // En web, react-native-web mapea View a <div>. Le pasamos altura concreta.
-      />
+      <View ref={containerRef} style={styles.realMap} />
     </View>
   );
 }
 
-// === Mapa simulado de fallback (móvil) ===
-function FallbackMap({ onSelectAnimal, onSelectVet }) {
+function FallbackMap({ animales, veterinarias, onSelectAnimal, onSelectVet }) {
   const [size, setSize] = useState({ width: 320, height: 460 });
-  // Convertimos lat/lng a una posición relativa dentro de un cuadro
-  // Rango aproximado de Santiago para encuadrar los puntos
   const LAT_MIN = -33.65, LAT_MAX = -33.35;
   const LNG_MIN = -70.80, LNG_MAX = -70.50;
 
@@ -175,7 +191,8 @@ function FallbackMap({ onSelectAnimal, onSelectVet }) {
         <Text style={[styles.zoneLabel, { bottom: 8, left: 12 }]}>Poniente</Text>
         <Text style={[styles.zoneLabel, { bottom: 8, right: 12 }]}>Sur</Text>
 
-        {ANIMALS.filter((a) => !a.adoptado).map((animal) => {
+        {animales.map((animal) => {
+          if (animal.lat == null || animal.lng == null) return null;
           const pos = toXY(animal.lat, animal.lng);
           return (
             <TouchableOpacity
@@ -195,7 +212,8 @@ function FallbackMap({ onSelectAnimal, onSelectVet }) {
           );
         })}
 
-        {VETERINARIAS.map((vet) => {
+        {veterinarias.map((vet) => {
+          if (vet.lat == null || vet.lng == null) return null;
           const pos = toXY(vet.lat, vet.lng);
           return (
             <TouchableOpacity
@@ -219,6 +237,35 @@ export default function MapaScreen() {
   const [fichaAnimal, setFichaAnimal] = useState(null);
   const [imgError, setImgError] = useState(false);
 
+  const [animales, setAnimales] = useState([]);
+  const [veterinarias, setVeterinarias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const [aResp, vResp] = await Promise.all([
+        supabase
+          .from('animales')
+          .select('*, organizaciones(*)')
+          .is('adoptado_por', null)
+          .not('lat', 'is', null)
+          .not('lng', 'is', null),
+        supabase.from('veterinarias').select('*').order('nombre'),
+      ]);
+      if (!mounted) return;
+      if (aResp.error) setError(aResp.error.message);
+      else if (vResp.error) setError(vResp.error.message);
+      setAnimales((aResp.data ?? []).map(mapAnimalRow));
+      setVeterinarias(vResp.data ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleSelectAnimal = (a) => {
     setImgError(false);
     setSelectedVet(null);
@@ -238,11 +285,9 @@ export default function MapaScreen() {
   const handleContactar = () => {
     Alert.alert(
       'Contacto veterinaria',
-      `${selectedVet.nombre}\nComuna: ${selectedVet.comuna}\nTeléfono: ${selectedVet.telefono}\nHorario: ${selectedVet.horario}`
+      `${selectedVet.nombre}\nComuna: ${selectedVet.comuna}\nTeléfono: ${selectedVet.telefono ?? '—'}\nHorario: ${selectedVet.horario ?? '—'}`
     );
   };
-
-  const animalesActivos = ANIMALS.filter((a) => !a.adoptado);
 
   return (
     <View style={styles.container}>
@@ -250,18 +295,36 @@ export default function MapaScreen() {
         <View style={styles.headerCard}>
           <Ionicons name="paw" size={20} color={COLORS.primary} />
           <Text style={styles.headerCardText}>
-            {animalesActivos.length} animales en seguimiento ·{' '}
-            {VETERINARIAS.length} veterinarias asociadas
+            {animales.length} animales en seguimiento ·{' '}
+            {veterinarias.length} veterinarias asociadas
           </Text>
         </View>
 
-        {Platform.OS === 'web' ? (
+        {error && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning-outline" size={16} color={COLORS.white} />
+            <Text style={styles.errorBannerText}>
+              No pudimos cargar el mapa: {error}
+            </Text>
+          </View>
+        )}
+
+        {loading ? (
+          <View style={styles.mapLoader}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.mapLoaderText}>Cargando mapa…</Text>
+          </View>
+        ) : Platform.OS === 'web' ? (
           <LeafletMap
+            animales={animales}
+            veterinarias={veterinarias}
             onSelectAnimal={handleSelectAnimal}
             onSelectVet={handleSelectVet}
           />
         ) : (
           <FallbackMap
+            animales={animales}
+            veterinarias={veterinarias}
             onSelectAnimal={handleSelectAnimal}
             onSelectVet={handleSelectVet}
           />
@@ -325,9 +388,7 @@ export default function MapaScreen() {
                   />
                 )}
                 <Text style={styles.modalTitle}>{selectedAnimal.nombre}</Text>
-                <Text style={styles.modalSubtitle}>
-                  {selectedAnimal.tipo} · ID {selectedAnimal.id}
-                </Text>
+                <Text style={styles.modalSubtitle}>{selectedAnimal.tipo}</Text>
                 <View
                   style={[
                     styles.estadoBadge,
@@ -376,14 +437,18 @@ export default function MapaScreen() {
                   <Ionicons name="location-outline" size={14} color={COLORS.gray} />
                   <Text style={styles.modalSmall}>{selectedVet.comuna}</Text>
                 </View>
-                <View style={styles.modalRow}>
-                  <Ionicons name="call-outline" size={14} color={COLORS.gray} />
-                  <Text style={styles.modalSmall}>{selectedVet.telefono}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Ionicons name="time-outline" size={14} color={COLORS.gray} />
-                  <Text style={styles.modalSmall}>{selectedVet.horario}</Text>
-                </View>
+                {selectedVet.telefono && (
+                  <View style={styles.modalRow}>
+                    <Ionicons name="call-outline" size={14} color={COLORS.gray} />
+                    <Text style={styles.modalSmall}>{selectedVet.telefono}</Text>
+                  </View>
+                )}
+                {selectedVet.horario && (
+                  <View style={styles.modalRow}>
+                    <Ionicons name="time-outline" size={14} color={COLORS.gray} />
+                    <Text style={styles.modalSmall}>{selectedVet.horario}</Text>
+                  </View>
+                )}
                 <RedesSocialesRow redes={selectedVet.redes} style={styles.vetRedesRow} />
                 <TouchableOpacity
                   style={[styles.primaryButton, { backgroundColor: COLORS.secondary }]}
@@ -397,9 +462,9 @@ export default function MapaScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Modal ficha completa */}
       <FichaAnimalModal
         animal={fichaAnimal}
+        org={fichaAnimal?.org}
         visible={!!fichaAnimal}
         onClose={() => setFichaAnimal(null)}
       />
@@ -409,12 +474,33 @@ export default function MapaScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  scrollContent: { padding: 12, paddingBottom: 130 },
+  scrollContent: {
+    padding: 12,
+    paddingBottom: 130,
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
+  },
   headerCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.white, borderRadius: 10, padding: 12, marginBottom: 12,
   },
   headerCardText: { marginLeft: 8, color: COLORS.text, fontSize: 13, fontWeight: '600', flex: 1 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8, marginBottom: 12,
+  },
+  errorBannerText: {
+    color: COLORS.white, fontSize: 12, marginLeft: 6, flex: 1,
+  },
+  mapLoader: {
+    height: 500,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white, borderRadius: 12,
+  },
+  mapLoaderText: { color: COLORS.gray, marginTop: 10, fontSize: 13 },
   mapWrapper: {
     borderRadius: 12, overflow: 'hidden',
     elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4,
