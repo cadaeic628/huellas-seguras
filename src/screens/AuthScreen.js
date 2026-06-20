@@ -139,7 +139,7 @@ function LoginForm({ onSubmit }) {
         onSubmitEditing={() => passwordRef.current?.focus()}
         error={emailFormatError}
       />
-      <Field
+      <PasswordField
         ref={passwordRef}
         label="Contraseña"
         value={password}
@@ -147,7 +147,6 @@ function LoginForm({ onSubmit }) {
           setPassword(t);
           setAuthError(null);
         }}
-        secureTextEntry
         returnKeyType="go"
         onSubmitEditing={handle}
       />
@@ -313,13 +312,10 @@ function SignupForm({ onSignupNormal, onSignupFundacion }) {
         error={emailFormatError}
       />
 
-      <Text style={styles.fieldLabel}>Contraseña</Text>
-      <TextInput
+      <PasswordField
+        label="Contraseña"
         value={password}
         onChangeText={setPassword}
-        style={styles.input}
-        secureTextEntry
-        placeholderTextColor={COLORS.gray}
       />
       <PasswordRequirements checks={checks} />
 
@@ -612,6 +608,50 @@ const Field = forwardRef(function Field(
   );
 });
 
+// Input de contraseña con ícono de ojo para alternar visibilidad. Reusa
+// el mismo `styles.input` que `Field`, sumando padding derecho para que el
+// texto no se solape con el botón. Forward ref para que el login pueda
+// enfocarlo desde el campo de email.
+const PasswordField = forwardRef(function PasswordField(
+  { label, error, ...rest },
+  ref
+) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.passwordWrapper}>
+        <TextInput
+          ref={ref}
+          style={[
+            styles.input,
+            styles.passwordInput,
+            error && styles.inputError,
+          ]}
+          secureTextEntry={!visible}
+          placeholderTextColor={COLORS.gray}
+          {...rest}
+        />
+        <TouchableOpacity
+          style={styles.passwordToggle}
+          onPress={() => setVisible((v) => !v)}
+          hitSlop={8}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        >
+          <Ionicons
+            name={visible ? 'eye-off-outline' : 'eye-outline'}
+            size={18}
+            color={COLORS.gray}
+          />
+        </TouchableOpacity>
+      </View>
+      {!!error && <Text style={styles.fieldError}>{error}</Text>}
+    </>
+  );
+});
+
 function DropdownTrigger({ label, value, placeholder, onPress, compact }) {
   return (
     <>
@@ -713,6 +753,17 @@ const styles = StyleSheet.create({
   },
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
   inputError: { borderColor: COLORS.urgent },
+  passwordWrapper: { position: 'relative', justifyContent: 'center' },
+  passwordInput: { paddingRight: 38 },
+  passwordToggle: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
   fieldError: {
     fontSize: 11,
     color: COLORS.urgent,
