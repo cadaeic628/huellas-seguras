@@ -608,11 +608,12 @@ const Field = forwardRef(function Field(
   );
 });
 
-// Input de contraseña con perrito ilustrado a la derecha que alterna entre
-// "mirando" (ojos abiertos) y "tapándose los ojos" para indicar la
-// visibilidad. Reusa el mismo `styles.input` que `Field`, sumando padding
-// derecho para que el texto no se solape con la imagen. Forward ref para
-// que el login pueda enfocarlo desde el campo de email.
+// Input de contraseña con dos elementos a la derecha: (1) un perrito
+// ilustrado dentro de un cuadradito teal — decorativo, refleja el estado de
+// visibilidad alternando entre "mirando" y "tapándose los ojos", y (2) un
+// botón de texto "Mostrar"/"Ocultar" en color primary que es el que
+// realmente alterna. Separamos affordance (el botón) de feedback visual (el
+// perrito) para que el target táctil sea claro y accesible.
 const PasswordField = forwardRef(function PasswordField(
   { label, error, ...rest },
   ref
@@ -633,24 +634,31 @@ const PasswordField = forwardRef(function PasswordField(
           placeholderTextColor={COLORS.gray}
           {...rest}
         />
-        <TouchableOpacity
-          style={styles.passwordToggle}
-          onPress={() => setVisible((v) => !v)}
-          hitSlop={8}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-        >
-          <Image
-            source={
-              visible
-                ? require('../../assets/dog-hide.png')
-                : require('../../assets/dog-peek.png')
-            }
-            style={styles.passwordDog}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+        <View style={styles.passwordRightControls} pointerEvents="box-none">
+          <View style={styles.passwordDogBox}>
+            <Image
+              source={
+                visible
+                  ? require('../../assets/dog-hide.png')
+                  : require('../../assets/dog-peek.png')
+              }
+              style={styles.passwordDog}
+              resizeMode="contain"
+            />
+          </View>
+          <TouchableOpacity
+            style={styles.passwordToggleBtn}
+            onPress={() => setVisible((v) => !v)}
+            hitSlop={6}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          >
+            <Text style={styles.passwordToggleText}>
+              {visible ? 'Ocultar' : 'Mostrar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
     </>
@@ -759,19 +767,38 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
   inputError: { borderColor: COLORS.urgent },
   passwordWrapper: { position: 'relative', justifyContent: 'center' },
-  // El PNG del perrito tiene padding interno (la silueta ocupa ~70% del
-  // canvas), por eso el ancho visual real es menor que el del touchable.
-  passwordInput: { paddingRight: 48 },
-  passwordToggle: {
+  // Padding derecho del input = cuadradito del perrito + gap + texto del
+  // botón + margen final. Si cambia el tamaño de alguno, recalibrar.
+  passwordInput: { paddingRight: 110 },
+  passwordRightControls: {
     position: 'absolute',
-    right: 4,
+    right: 6,
     top: 0,
     bottom: 0,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
   },
-  passwordDog: { width: 34, height: 34 },
+  // Cuadradito teal con el perrito adentro: aporta contraste contra el
+  // input blanco y refuerza visualmente que es parte del UI.
+  passwordDogBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  passwordDog: { width: 26, height: 26 },
+  passwordToggleBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  passwordToggleText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   fieldError: {
     fontSize: 11,
     color: COLORS.urgent,
