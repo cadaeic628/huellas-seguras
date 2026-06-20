@@ -8,6 +8,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
@@ -43,10 +44,11 @@ export default function AuthScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.brand}>
-          <View style={styles.logoCircle}>
-            <Ionicons name="paw" size={36} color={COLORS.white} />
-          </View>
-          <Text style={styles.brandTitle}>Huellas Seguras</Text>
+          <Image
+            source={require('../../assets/logo-full.png')}
+            style={styles.brandLogo}
+            resizeMode="contain"
+          />
           <Text style={styles.brandSubtitle}>
             Rescata, apadrina, dona. Únete a la red de cuidado.
           </Text>
@@ -648,7 +650,7 @@ function PrimaryButton({ onPress, disabled, icon, label }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.background },
+  root: { flex: 1, backgroundColor: COLORS.primary },
   scroll: {
     padding: 18,
     paddingBottom: 40,
@@ -658,28 +660,15 @@ const styles = StyleSheet.create({
   },
 
   brand: { alignItems: 'center', marginTop: 24, marginBottom: 18 },
-  logoCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  brandTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: 12,
+  brandLogo: {
+    width: 220,
+    height: 264,
+    marginBottom: 4,
   },
   brandSubtitle: {
     fontSize: 13,
-    color: COLORS.gray,
+    color: COLORS.white,
+    opacity: 0.92,
     marginTop: 4,
     textAlign: 'center',
     paddingHorizontal: 20,

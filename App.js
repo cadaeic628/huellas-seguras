@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   StyleSheet,
@@ -120,9 +121,14 @@ function MainNavigator() {
         headerStyle: { backgroundColor: COLORS.primary },
         headerTintColor: COLORS.white,
         headerTitleStyle: { fontWeight: 'bold' },
-        // Alineado a la izquierda. El logo irá al extremo izquierdo más
-        // adelante (via headerLeft) y el menú de cuenta queda a la derecha.
         headerTitleAlign: 'left',
+        headerLeft: () => (
+          <Image
+            source={require('./assets/logo-icon.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
+        ),
         headerRight: () => <HeaderMenu navigation={navigation} />,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
@@ -226,6 +232,11 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 18 : 6,
   },
   tabItem: { height: 56 },
+  headerLogo: {
+    width: 36,
+    height: 36,
+    marginLeft: 14,
+  },
   centerButtonWrapper: {
     flex: 1,
     justifyContent: 'center',
