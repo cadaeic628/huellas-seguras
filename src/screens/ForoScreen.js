@@ -35,9 +35,14 @@ const formatearFecha = (iso) => {
 // Convierte una row de foro_posts con sus joins al shape camelCase que
 // usan las cards. `foro_post_animales(animales(...))` viene como un array
 // de objetos { animales: { ... } } por cada relación; lo aplanamos.
+// Para posts tipo 'publicidad', el autor es una tienda en lugar de una
+// organización: tomamos nombre desde el join correspondiente.
 function mapPostRow(row) {
+  const esPublicidad = row.tipo === 'publicidad';
   return {
     id: row.id,
+    tipo: row.tipo ?? 'fundacion',
+    esPublicidad,
     titulo: row.titulo,
     descripcion: row.descripcion,
     monto: row.monto,
@@ -45,7 +50,10 @@ function mapPostRow(row) {
     boleta: row.boleta_url,
     fecha: row.created_at,
     organizacionId: row.organizacion_id,
-    organizacionNombre: row.organizaciones?.nombre ?? 'Fundación',
+    tiendaId: row.tienda_id,
+    autorNombre: esPublicidad
+      ? (row.tiendas?.nombre ?? 'Tienda')
+      : (row.organizaciones?.nombre ?? 'Fundación'),
     animales: (row.foro_post_animales ?? [])
       .map((pa) => pa.animales)
       .filter(Boolean),
@@ -68,13 +76,27 @@ function PostCard({ post, onAbrirBoleta }) {
   const [imgError, setImgError] = useState(false);
 
   return (
-    <View style={styles.postCard}>
+    <View style={[styles.postCard, post.esPublicidad && styles.postCardAd]}>
       <View style={styles.postHeader}>
-        <View style={styles.orgIcon}>
-          <Ionicons name="business" size={18} color={COLORS.white} />
+        <View
+          style={[styles.orgIcon, post.esPublicidad && styles.orgIconAd]}
+        >
+          <Ionicons
+            name={post.esPublicidad ? 'storefront' : 'business'}
+            size={18}
+            color={COLORS.white}
+          />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.orgName}>{post.organizacionNombre}</Text>
+          <View style={styles.orgNameRow}>
+            <Text style={styles.orgName} numberOfLines={1}>{post.autorNombre}</Text>
+            {post.esPublicidad && (
+              <View style={styles.adBadge}>
+                <Ionicons name="megaphone" size={9} color={COLORS.white} />
+                <Text style={styles.adBadgeText}>Publicidad</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.postDate}>{formatearFecha(post.fecha)}</Text>
         </View>
       </View>
@@ -490,7 +512,7 @@ export default function ForoScreen() {
     const { data, error } = await supabase
       .from('foro_posts')
       .select(
-        'id, titulo, descripcion, monto, foto_url, boleta_url, created_at, organizacion_id, organizaciones(id, nombre), foro_post_animales(animales(id, nombre, zona))'
+        'id, tipo, titulo, descripcion, monto, foto_url, boleta_url, created_at, organizacion_id, tienda_id, organizaciones(id, nombre), tiendas(id, nombre), foro_post_animales(animales(id, nombre, zona))'
       )
       .order('created_at', { ascending: false });
     if (error) {
@@ -571,7 +593,8 @@ export default function ForoScreen() {
           </View>
           <Text style={styles.headerSubtitle}>
             Las fundaciones publican aquí cómo están usando los aportes
-            recibidos. Tu donación se traduce en acciones concretas.
+            recibidos. También verás avisos de tiendas partner donde puedes
+            canjear los puntos que ganas reportando animales.
           </Text>
         </View>
 
@@ -716,6 +739,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
+  postCardAd: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.accent,
+  },
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -730,7 +757,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
   },
-  orgName: { fontSize: 14, fontWeight: 'bold', color: COLORS.text },
+  // Borde y color distinto para que el ícono de tienda se distinga del de
+  // fundación a simple vista (tal como aparece marcado en el mockup).
+  orgIconAd: {
+    backgroundColor: COLORS.accent,
+    borderWidth: 3,
+    borderColor: '#FFD9A8',
+  },
+  orgNameRow: { flexDirection: 'row', alignItems: 'center' },
+  orgName: { fontSize: 14, fontWeight: 'bold', color: COLORS.text, flexShrink: 1 },
+  adBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8,
+    marginLeft: 6,
+  },
+  adBadgeText: {
+    color: COLORS.white, fontSize: 9, fontWeight: '700', marginLeft: 3,
+    textTransform: 'uppercase', letterSpacing: 0.4,
+  },
   postDate: { fontSize: 11, color: COLORS.gray, marginTop: 1 },
   postTitle: {
     fontSize: 15,
