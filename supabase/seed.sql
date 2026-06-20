@@ -25,6 +25,9 @@
 -- user_id != null) no se tocan. CASCADE limpia animales y foro_posts.
 delete from public.organizaciones where user_id is null;
 delete from public.veterinarias;
+-- Tiendas no tienen user_id (mismo patrón que veterinarias): el equipo
+-- las administra vía service_role. Limpiar y re-insertar.
+delete from public.tiendas;
 
 -- ============================================================
 -- Organizaciones (6 placeholder)
@@ -522,6 +525,108 @@ insert into public.foro_post_animales (post_id, animal_id) values
 on conflict (post_id, animal_id) do nothing;
 
 -- ============================================================
+-- Tiendas (3 partners) y cupones
+-- ============================================================
+
+insert into public.tiendas (
+  id, nombre, comuna, descripcion, telefono, web, logo_url
+) values
+  (
+    '44444444-4444-4444-4444-444444444401',
+    'PetShop Aurora',
+    'Providencia',
+    'Tienda de alimentos y accesorios para mascotas. Sucursales en Providencia y Las Condes.',
+    '+56 2 2345 0001',
+    'https://petshopaurora.cl',
+    null
+  ),
+  (
+    '44444444-4444-4444-4444-444444444402',
+    'Veterinaria Premium Wags',
+    'Las Condes',
+    'Servicios veterinarios y peluquería canina. Cupones aplican a cualquier servicio.',
+    '+56 2 2345 0002',
+    'https://wags.cl',
+    null
+  ),
+  (
+    '44444444-4444-4444-4444-444444444403',
+    'Croquetería Buen Bocado',
+    'Ñuñoa',
+    'Alimento natural para perros y gatos. Despacho a domicilio.',
+    '+56 2 2345 0003',
+    null,
+    null
+  )
+on conflict (id) do nothing;
+
+insert into public.cupones (
+  id, tienda_id, titulo, descripcion, descuento_pct, costo_puntos, activo
+) values
+  (
+    '55555555-5555-5555-5555-555555555501',
+    '44444444-4444-4444-4444-444444444401',
+    '10% de descuento en accesorios',
+    'Válido en cualquier accesorio (correas, juguetes, comederos). No acumulable con otras ofertas.',
+    10, 100, true
+  ),
+  (
+    '55555555-5555-5555-5555-555555555502',
+    '44444444-4444-4444-4444-444444444401',
+    '25% de descuento en alimento',
+    'Aplica a sacos de cualquier marca. Un canje por cliente al mes.',
+    25, 500, true
+  ),
+  (
+    '55555555-5555-5555-5555-555555555503',
+    '44444444-4444-4444-4444-444444444402',
+    '15% en consulta veterinaria',
+    'Aplica a la primera consulta general. Reservar con tu código.',
+    15, 200, true
+  ),
+  (
+    '55555555-5555-5555-5555-555555555504',
+    '44444444-4444-4444-4444-444444444403',
+    '20% en saco de 10kg',
+    'Saco de 10kg de comida natural. Despacho gratis dentro de Ñuñoa.',
+    20, 350, true
+  )
+on conflict (id) do nothing;
+
+-- ============================================================
+-- Foro: posts de publicidad (tipo='publicidad')
+-- ============================================================
+
+insert into public.foro_posts (
+  id, organizacion_id, tienda_id, tipo, titulo, descripcion, monto, foto_url, boleta_url, created_at
+) values
+  (
+    '33333333-3333-3333-3333-333333333401',
+    null,
+    '44444444-4444-4444-4444-444444444401',
+    'publicidad',
+    'Nuevos sabores de alimento húmedo en PetShop Aurora',
+    'Llegaron 4 sabores nuevos de la línea premium. Si juntas 100 puntos en la app, canjea un cupón de 10% en toda la tienda.',
+    null,
+    'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800',
+    null,
+    now() - interval '5 days'
+  ),
+  (
+    '33333333-3333-3333-3333-333333333402',
+    null,
+    '44444444-4444-4444-4444-444444444402',
+    'publicidad',
+    'Peluquería canina con 15% off para usuarios de Huellas Seguras',
+    'Canjea tus puntos por descuento en cualquier servicio veterinario o de peluquería. Atendemos en Las Condes de lunes a sábado.',
+    null,
+    null,
+    null,
+    now() - interval '10 days'
+  )
+on conflict (id) do nothing;
+
+-- ============================================================
 -- Demo helper: poblar datos de un usuario normal por email
 -- ============================================================
 --
@@ -578,8 +683,11 @@ begin
     (v_user_id, '11111111-1111-1111-1111-111111111105', 30000, now() - interval '4 days');
   v_count_don := 4;
 
-  -- Reportes (idempotente vía delete + insert)
+  -- Reportes (idempotente vía delete + insert). Reseteamos puntos a 0
+  -- antes para que el trigger on_reporte_created los recalcule limpio
+  -- (sin acumular puntos de corridas anteriores del seed).
   delete from public.reportes where user_id = v_user_id and ubicacion like 'DEMO%';
+  update public.users set puntos = 0 where id = v_user_id;
   insert into public.reportes (user_id, animal_id, ubicacion, descripcion, estado_observado, created_at) values
     (v_user_id, '22222222-2222-2222-2222-222222222210', 'DEMO Av. Matta 1240, Santiago Centro', 'Lo vi cojeando, me preocupa la pata.', 'urgente', now() - interval '11 days'),
     (v_user_id, null, 'DEMO Plaza Brasil, Santiago Centro', 'Cachorro perdido, parece estar sin dueño.', 'observacion', now() - interval '7 days'),
