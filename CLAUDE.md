@@ -74,6 +74,28 @@ Tabla `public.veterinarias` con SELECT público y sin policies de escritura — 
 service_role puede tocarla. A futuro existirá una plataforma separada para
 veterinarias; este repo no debe agregar registro ni login para ese rol.
 
+## Tiendas y puntos
+
+Las **tiendas** partner (catálogo + publicidad en el foro) siguen el mismo patrón que
+las veterinarias: tabla `public.tiendas`, SELECT público, sin policies de escritura
+(las administra el equipo vía service_role). No tienen login propio.
+
+El sistema de puntos vive en `public.users.puntos` (entero). El trigger
+`on_reporte_created` suma `+10` puntos por cada insert en `reportes`. Si más adelante
+se distinguen estados de moderación, mover la lógica a un AFTER UPDATE que dispare
+cuando `estado` pase a `'verificado'`.
+
+Los **cupones** (`public.cupones`) son el catálogo canjeable; el **historial** vive en
+`public.canjes` con un `codigo` único generado por el RPC `canjear_cupon`. El cliente
+no inserta en `canjes` directamente (la RLS solo permite SELECT del propio user);
+todo pasa por el RPC SECURITY DEFINER, que valida saldo, genera el código y descuenta
+los puntos en una sola transacción.
+
+En el **foro**, los posts tienen una columna `tipo` (`'fundacion'` | `'publicidad'`)
+y un check constraint exige que `organizacion_id` y `tienda_id` sean mutuamente
+excluyentes. La UI distingue ambos visualmente con ícono y badge distintos
+(`business` verde vs `storefront` naranjo + badge "Publicidad").
+
 ## Trabajar con esta base
 
 - Antes de tocar una pantalla, lee la pantalla análoga existente y respeta su patrón
