@@ -608,10 +608,11 @@ const Field = forwardRef(function Field(
   );
 });
 
-// Input de contraseña con ícono de ojo para alternar visibilidad. Reusa
-// el mismo `styles.input` que `Field`, sumando padding derecho para que el
-// texto no se solape con el botón. Forward ref para que el login pueda
-// enfocarlo desde el campo de email.
+// Input de contraseña con perrito ilustrado a la derecha que alterna entre
+// "mirando" (ojos abiertos) y "tapándose los ojos" para indicar la
+// visibilidad. Reusa el mismo `styles.input` que `Field`, sumando padding
+// derecho para que el texto no se solape con la imagen. Forward ref para
+// que el login pueda enfocarlo desde el campo de email.
 const PasswordField = forwardRef(function PasswordField(
   { label, error, ...rest },
   ref
@@ -640,10 +641,14 @@ const PasswordField = forwardRef(function PasswordField(
           accessibilityRole="button"
           accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
         >
-          <Ionicons
-            name={visible ? 'eye-off-outline' : 'eye-outline'}
-            size={18}
-            color={COLORS.gray}
+          <Image
+            source={
+              visible
+                ? require('../../assets/dog-hide.png')
+                : require('../../assets/dog-peek.png')
+            }
+            style={styles.passwordDog}
+            resizeMode="contain"
           />
         </TouchableOpacity>
       </View>
@@ -754,7 +759,9 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
   inputError: { borderColor: COLORS.urgent },
   passwordWrapper: { position: 'relative', justifyContent: 'center' },
-  passwordInput: { paddingRight: 38 },
+  // El PNG del perrito tiene padding interno (la silueta ocupa ~70% del
+  // canvas), por eso el ancho visual real es menor que el del touchable.
+  passwordInput: { paddingRight: 48 },
   passwordToggle: {
     position: 'absolute',
     right: 4,
@@ -762,8 +769,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
+  passwordDog: { width: 34, height: 34 },
   fieldError: {
     fontSize: 11,
     color: COLORS.urgent,
