@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../constants/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -128,42 +129,93 @@ function PerfilNormal() {
   const [adoptados, setAdoptados] = useState([]);
   const [reportes, setReportes] = useState([]);
   const [aportes, setAportes] = useState([]);
+  const [puntos, setPuntos] = useState(0);
+  const [cupones, setCupones] = useState([]);
+  const [canjes, setCanjes] = useState([]);
+  const [canjeResult, setCanjeResult] = useState(null); // { codigo, cupon }
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      setLoading(true);
-      const [apadResp, adoptResp, repsResp, donsResp] = await Promise.all([
-        supabase
-          .from('animales')
-          .select('*, organizaciones(*)')
-          .eq('apadrinado_por', user.id),
-        supabase
-          .from('animales')
-          .select('*, organizaciones(*)')
-          .eq('adoptado_por', user.id),
-        supabase
-          .from('reportes')
-          .select(
-            'id, ubicacion, descripcion, estado, estado_observado, created_at, animal_id, animales(id, nombre, zona, comuna, foto_url, tipo, estado, ficha, organizaciones(*))'
-          )
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('donaciones')
-          .select('id, monto, created_at, organizacion_id, organizaciones(nombre)')
-          .order('created_at', { ascending: false }),
-      ]);
-      if (!mounted) return;
-      setApadrinados((apadResp.data ?? []).map(mapAnimalRow));
-      setAdoptados((adoptResp.data ?? []).map(mapAnimalRow));
-      setReportes(repsResp.data ?? []);
-      setAportes(donsResp.data ?? []);
-      setLoading(false);
-    })();
-    return () => {
-      mounted = false;
-    };
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    const [apadResp, adoptResp, repsResp, donsResp, meResp, cupResp, canjResp] = await Promise.all([
+      supabase
+        .from('animales')
+        .select('*, organizaciones(*)')
+        .eq('apadrinado_por', user.id),
+      supabase
+        .from('animales')
+        .select('*, organizaciones(*)')
+        .eq('adoptado_por', user.id),
+      supabase
+        .from('reportes')
+        .select(
+          'id, ubicacion, descripcion, estado, estado_observado, created_at, animal_id, animales(id, nombre, zona, comuna, foto_url, tipo, estado, ficha, organizaciones(*))'
+        )
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('donaciones')
+        .select('id, monto, created_at, organizacion_id, organizaciones(nombre)')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('users')
+        .select('puntos')
+        .eq('id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('cupones')
+        .select('id, titulo, descripcion, descuento_pct, costo_puntos, activo, tienda_id, tiendas(nombre)')
+        .eq('activo', true)
+        .order('costo_puntos', { ascending: true }),
+      supabase
+        .from('canjes')
+        .select('id, codigo, puntos_gastados, created_at, cupon_id, cupones(titulo, descuento_pct, tiendas(nombre))')
+        .order('created_at', { ascending: false }),
+    ]);
+    setApadrinados((apadResp.data ?? []).map(mapAnimalRow));
+    setAdoptados((adoptResp.data ?? []).map(mapAnimalRow));
+    setReportes(repsResp.data ?? []);
+    setAportes(donsResp.data ?? []);
+    setPuntos(meResp.data?.puntos ?? 0);
+    setCupones(cupResp.data ?? []);
+    setCanjes(canjResp.data ?? []);
+    setLoading(false);
   }, [user.id]);
+
+  // useFocusEffect en lugar de useEffect: refresca cada vez que se entra al
+  // tab Perfil. Necesario porque puntos/reportes/cupones pueden cambiar
+  // desde otras pantallas (Reportar suma puntos, Donar agrega aportes) y
+  // sin esto el perfil quedaría con datos cacheados.
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      cargar().then(() => { if (!mounted) return; });
+      return () => { mounted = false; };
+    }, [cargar])
+  );
+
+  const [canjeError, setCanjeError] = useState(null);
+
+  const handleCanjear = async (cupon) => {
+    setCanjeError(null);
+    if (puntos < cupon.costo_puntos) {
+      setCanjeError(`Necesitas ${cupon.costo_puntos} puntos. Tienes ${puntos}.`);
+      return;
+    }
+    const { data, error } = await supabase.rpc('canjear_cupon', { p_cupon_id: cupon.id });
+    // Útil para diagnosticar fallas en consola del navegador.
+    console.log('[canjear_cupon] data=', data, 'error=', error);
+    if (error) {
+      setCanjeError(error.message || 'Error desconocido al canjear.');
+      return;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.codigo) {
+      setCanjeError('El RPC respondió pero sin código. Revisa la consola.');
+      return;
+    }
+    setPuntos(row.puntos_restantes);
+    setCanjeResult({ codigo: row.codigo, cupon });
+    cargar();
+  };
 
   const totalAportado = aportes.reduce((acc, d) => acc + d.monto, 0);
 
@@ -228,10 +280,21 @@ function PerfilNormal() {
           <Section
             title="Animales que reportaste"
             icon="camera-outline"
+            right={
+              <View style={styles.puntosPill}>
+                <Ionicons name="star" size={11} color={COLORS.white} />
+                <Text style={styles.puntosPillText}>{puntos} pts</Text>
+              </View>
+            }
             empty={reportes.length === 0
-              ? 'Aún no has enviado reportes desde el tab "Reportar".'
+              ? 'Aún no has enviado reportes desde el tab "Reportar". Cada reporte enviado suma 10 puntos.'
               : null}
           >
+            {reportes.length > 0 && (
+              <Text style={styles.puntosHint}>
+                Ganas 10 puntos por cada reporte enviado. Llevas {reportes.length} reporte{reportes.length === 1 ? '' : 's'}.
+              </Text>
+            )}
             {reportes.map((r) => (
               <ReporteRow
                 key={r.id}
@@ -240,6 +303,49 @@ function PerfilNormal() {
               />
             ))}
           </Section>
+
+          <Section
+            title="Canjear puntos"
+            icon="gift-outline"
+            right={
+              <View style={styles.puntosTotal}>
+                <Ionicons name="star" size={14} color={COLORS.accent} />
+                <Text style={styles.puntosTotalText}>{puntos}</Text>
+              </View>
+            }
+            empty={cupones.length === 0
+              ? 'Aún no hay cupones disponibles. Vuelve más tarde.'
+              : null}
+          >
+            <Text style={styles.canjearHint}>
+              Canjea tus puntos por descuentos en tiendas partner. Cada cupón te
+              entrega un código que puedes presentar en la tienda.
+            </Text>
+            {canjeError && (
+              <View style={styles.canjeErrorBox}>
+                <Ionicons name="warning" size={14} color={COLORS.white} />
+                <Text style={styles.canjeErrorText}>{canjeError}</Text>
+              </View>
+            )}
+            <View style={styles.cuponesGrid}>
+              {cupones.map((c) => (
+                <CuponCard
+                  key={c.id}
+                  cupon={c}
+                  puntos={puntos}
+                  onCanjear={() => handleCanjear(c)}
+                />
+              ))}
+            </View>
+          </Section>
+
+          {canjes.length > 0 && (
+            <Section title="Cupones canjeados" icon="ticket-outline">
+              {canjes.map((c) => (
+                <CanjeRow key={c.id} canje={c} />
+              ))}
+            </Section>
+          )}
 
           <Section
             title="Historial de aportes"
@@ -307,6 +413,11 @@ function PerfilNormal() {
         org={fichaAnimal?.org}
         visible={!!fichaAnimal}
         onClose={() => setFichaAnimal(null)}
+      />
+
+      <CanjeResultModal
+        result={canjeResult}
+        onClose={() => setCanjeResult(null)}
       />
     </ScrollView>
   );
@@ -540,6 +651,102 @@ function ReporteRow({ reporte, onAbrirAnimal }) {
         </TouchableOpacity>
       )}
     </View>
+  );
+}
+
+function CuponCard({ cupon, puntos, onCanjear }) {
+  const alcanza = puntos >= cupon.costo_puntos;
+  return (
+    <View style={styles.cuponCard}>
+      <View style={styles.cuponHeader}>
+        <View style={styles.cuponDescuento}>
+          <Text style={styles.cuponDescuentoText}>{cupon.descuento_pct}%</Text>
+          <Text style={styles.cuponDescuentoLabel}>OFF</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={styles.cuponTitulo} numberOfLines={2}>{cupon.titulo}</Text>
+          <Text style={styles.cuponTienda} numberOfLines={1}>
+            {cupon.tiendas?.nombre ?? 'Tienda'}
+          </Text>
+        </View>
+      </View>
+      {cupon.descripcion && (
+        <Text style={styles.cuponDescripcion} numberOfLines={3}>
+          {cupon.descripcion}
+        </Text>
+      )}
+      <TouchableOpacity
+        style={[styles.cuponBtn, !alcanza && styles.cuponBtnDisabled]}
+        onPress={onCanjear}
+        disabled={!alcanza}
+      >
+        <Ionicons name="star" size={12} color={COLORS.white} />
+        <Text style={styles.cuponBtnText}>
+          {alcanza ? `Canjear · ${cupon.costo_puntos} pts` : `Te faltan ${cupon.costo_puntos - puntos} pts`}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function CanjeRow({ canje }) {
+  const tienda = canje.cupones?.tiendas?.nombre ?? 'Tienda';
+  const titulo = canje.cupones?.titulo ?? 'Cupón';
+  return (
+    <View style={styles.row}>
+      <View style={[styles.rowIcon, { backgroundColor: COLORS.accent }]}>
+        <Ionicons name="ticket" size={14} color={COLORS.white} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{titulo}</Text>
+        <Text style={styles.rowSubtitle} numberOfLines={1}>{tienda}</Text>
+        <Text style={styles.rowDate}>{formatearFecha(canje.created_at)}</Text>
+      </View>
+      <View style={styles.codigoBox}>
+        <Text style={styles.codigoText}>{canje.codigo}</Text>
+        <Text style={styles.codigoLabel}>código</Text>
+      </View>
+    </View>
+  );
+}
+
+function CanjeResultModal({ result, onClose }) {
+  return (
+    <Modal
+      transparent
+      visible={!!result}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          {result && (
+            <>
+              <View style={styles.canjeOk}>
+                <Ionicons name="checkmark-circle" size={42} color={COLORS.healthy} />
+              </View>
+              <Text style={styles.modalTitle}>¡Cupón canjeado!</Text>
+              <Text style={styles.modalHint}>
+                Presenta este código en {result.cupon.tiendas?.nombre ?? 'la tienda'} para
+                obtener tu descuento de {result.cupon.descuento_pct}%.
+              </Text>
+              <View style={styles.codigoBig}>
+                <Text style={styles.codigoBigText}>{result.codigo}</Text>
+              </View>
+              <Text style={styles.modalHint}>
+                Guarda tu código. Lo puedes volver a ver en "Cupones canjeados".
+              </Text>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnPrimary, { marginTop: 12 }]}
+                onPress={onClose}
+              >
+                <Text style={styles.modalBtnPrimaryText}>Listo</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1006,4 +1213,97 @@ const styles = StyleSheet.create({
     color: COLORS.primary, fontWeight: 'bold', fontSize: 13,
   },
   modalBtnDisabled: { backgroundColor: COLORS.gray, opacity: 0.6 },
+
+  // Puntos & cupones
+  puntosPill: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+  },
+  puntosPillText: {
+    color: COLORS.white, fontSize: 11, fontWeight: '700', marginLeft: 4,
+  },
+  puntosTotal: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+  },
+  puntosTotalText: {
+    color: COLORS.accent, fontWeight: 'bold', fontSize: 14, marginLeft: 4,
+  },
+  puntosHint: {
+    color: COLORS.gray, fontSize: 11, fontStyle: 'italic', marginBottom: 8,
+  },
+  canjearHint: {
+    color: COLORS.gray, fontSize: 12, lineHeight: 17, marginBottom: 10,
+  },
+  cuponesGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
+  cuponCard: {
+    width: '50%', padding: 4,
+  },
+  cuponHeader: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 6,
+  },
+  cuponDescuento: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 3,
+    alignItems: 'center', minWidth: 44,
+  },
+  cuponDescuentoText: {
+    color: COLORS.white, fontSize: 15, fontWeight: 'bold', lineHeight: 16,
+  },
+  cuponDescuentoLabel: {
+    color: COLORS.white, fontSize: 8, fontWeight: '700', lineHeight: 9,
+  },
+  cuponTitulo: { fontSize: 12, fontWeight: '700', color: COLORS.text },
+  cuponTienda: { fontSize: 10, color: COLORS.gray, marginTop: 1 },
+  cuponDescripcion: {
+    fontSize: 11, color: COLORS.text, lineHeight: 15, marginBottom: 8,
+  },
+  cuponBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 7, borderRadius: 18,
+  },
+  cuponBtnDisabled: { backgroundColor: COLORS.gray, opacity: 0.6 },
+  cuponBtnText: {
+    color: COLORS.white, fontSize: 11, fontWeight: '700', marginLeft: 4,
+  },
+  codigoBox: {
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 8, marginLeft: 8,
+  },
+  codigoText: {
+    color: COLORS.primary, fontWeight: 'bold', fontSize: 13,
+    letterSpacing: 1,
+  },
+  codigoLabel: {
+    color: COLORS.gray, fontSize: 9, marginTop: 1, fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  canjeOk: { alignItems: 'center', marginBottom: 6 },
+  codigoBig: {
+    backgroundColor: COLORS.background,
+    paddingVertical: 14, paddingHorizontal: 14,
+    borderRadius: 10, marginVertical: 10,
+    alignItems: 'center',
+    borderWidth: 2, borderStyle: 'dashed', borderColor: COLORS.primary,
+  },
+  codigoBigText: {
+    color: COLORS.primary, fontSize: 26, fontWeight: 'bold',
+    letterSpacing: 4,
+  },
+  canjeErrorBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#E63946',
+    paddingHorizontal: 10, paddingVertical: 8,
+    borderRadius: 8, marginBottom: 8,
+  },
+  canjeErrorText: {
+    color: COLORS.white, fontSize: 12, fontWeight: '600',
+    marginLeft: 6, flex: 1,
+  },
 });
