@@ -635,17 +635,6 @@ const PasswordField = forwardRef(function PasswordField(
           {...rest}
         />
         <View style={styles.passwordRightControls} pointerEvents="box-none">
-          <View style={styles.passwordDogBox}>
-            <Image
-              source={
-                visible
-                  ? require('../../assets/dog-hide.png')
-                  : require('../../assets/dog-peek.png')
-              }
-              style={styles.passwordDog}
-              resizeMode="contain"
-            />
-          </View>
           <TouchableOpacity
             style={styles.passwordToggleBtn}
             onPress={() => setVisible((v) => !v)}
@@ -658,6 +647,17 @@ const PasswordField = forwardRef(function PasswordField(
               {visible ? 'Ocultar' : 'Mostrar'}
             </Text>
           </TouchableOpacity>
+          <View style={styles.passwordDogBox}>
+            <Image
+              source={
+                visible
+                  ? require('../../assets/dog-hide.png')
+                  : require('../../assets/dog-peek.png')
+              }
+              style={styles.passwordDog}
+              resizeMode="contain"
+            />
+          </View>
         </View>
       </View>
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
@@ -787,12 +787,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
   passwordDog: { width: 26, height: 26 },
   passwordToggleBtn: {
     paddingHorizontal: 4,
     paddingVertical: 6,
+    marginRight: 8,
   },
   passwordToggleText: {
     color: COLORS.primary,
