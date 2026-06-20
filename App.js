@@ -205,10 +205,22 @@ function RootGate() {
   return <MainNavigator />;
 }
 
+// Formatter para el <title> del browser en web. El default de React
+// Navigation deja "undefined" cuando no hay una screen activa (ej. mientras
+// se muestra el splash o el AuthScreen, que no están dentro del navigator).
+// Aquí siempre caemos al nombre de la app.
+const documentTitle = {
+  formatter: (options, route) => {
+    const screen = options?.title ?? route?.name;
+    if (!screen || screen === 'Huellas Seguras') return 'Huellas Seguras';
+    return `${screen} · Huellas Seguras`;
+  },
+};
+
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
+      <NavigationContainer documentTitle={documentTitle}>
         <StatusBar style="light" />
         <RootGate />
       </NavigationContainer>
