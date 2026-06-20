@@ -31,8 +31,13 @@ create table if not exists public.users (
   role text not null check (role in ('normal', 'fundacion')),
   nombre text not null,
   avatar_url text,
+  puntos integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+-- Migración suave para installs previos a la columna puntos.
+alter table public.users
+  add column if not exists puntos integer not null default 0;
 
 create table if not exists public.organizaciones (
   id uuid primary key default gen_random_uuid(),
@@ -116,24 +121,108 @@ create table if not exists public.donaciones (
 create index if not exists donaciones_user_idx on public.donaciones(user_id);
 create index if not exists donaciones_org_idx on public.donaciones(organizacion_id);
 
+-- Tiendas partner de la app: son entidades comerciales (locales, e-commerce)
+-- que pagan por aparecer en el foro como publicidad y cuyos cupones se canjean
+-- con puntos. Mismo patrón que `veterinarias`: las administra el equipo del
+-- proyecto vía service_role; no tienen login propio en esta versión.
+create table if not exists public.tiendas (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  comuna text,
+  descripcion text,
+  telefono text,
+  web text,
+  logo_url text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.foro_posts (
   id uuid primary key default gen_random_uuid(),
-  organizacion_id uuid not null references public.organizaciones(id) on delete cascade,
+  organizacion_id uuid references public.organizaciones(id) on delete cascade,
+  tienda_id uuid references public.tiendas(id) on delete cascade,
+  -- Distingue render en el feed: fundacion = ícono business verde,
+  -- publicidad = ícono storefront naranjo + badge "Publicidad".
+  tipo text not null default 'fundacion'
+    check (tipo in ('fundacion', 'publicidad')),
   titulo text not null,
   descripcion text not null,
   monto integer,
   foto_url text,
   boleta_url text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Exactamente una de las dos columnas de autor debe estar set.
+  constraint foro_posts_autor_check check (
+    (tipo = 'fundacion' and organizacion_id is not null and tienda_id is null)
+    or
+    (tipo = 'publicidad' and tienda_id is not null and organizacion_id is null)
+  )
 );
 
+-- Migración suave para installs previos a tienda_id / tipo. Tiene que ir
+-- ANTES del CREATE INDEX y del check constraint para que ambos puedan
+-- referenciar las nuevas columnas. organizacion_id pasa a ser nullable
+-- porque ahora puede venir un post de una tienda.
+alter table public.foro_posts
+  add column if not exists tienda_id uuid references public.tiendas(id) on delete cascade;
+
+alter table public.foro_posts
+  add column if not exists tipo text not null default 'fundacion';
+
+alter table public.foro_posts
+  alter column organizacion_id drop not null;
+
 create index if not exists foro_posts_org_idx on public.foro_posts(organizacion_id);
+create index if not exists foro_posts_tienda_idx on public.foro_posts(tienda_id);
+
+-- Re-aplica el check de autor para installs que tenían foro_posts antes de
+-- introducir publicidad (donde el CREATE TABLE no se aplicó porque la tabla
+-- ya existía). Idempotente vía DROP IF EXISTS.
+alter table public.foro_posts
+  drop constraint if exists foro_posts_autor_check;
+alter table public.foro_posts
+  add constraint foro_posts_autor_check check (
+    (tipo = 'fundacion' and organizacion_id is not null and tienda_id is null)
+    or
+    (tipo = 'publicidad' and tienda_id is not null and organizacion_id is null)
+  );
 
 create table if not exists public.foro_post_animales (
   post_id uuid not null references public.foro_posts(id) on delete cascade,
   animal_id uuid not null references public.animales(id) on delete cascade,
   primary key (post_id, animal_id)
 );
+
+-- Catálogo de cupones canjeables con puntos. Cada cupón pertenece a una
+-- tienda y describe un descuento (porcentaje) con un costo en puntos. El
+-- equipo del proyecto edita esto vía SQL Editor; el cliente solo lo lee y
+-- canjea vía el RPC `canjear_cupon`.
+create table if not exists public.cupones (
+  id uuid primary key default gen_random_uuid(),
+  tienda_id uuid not null references public.tiendas(id) on delete cascade,
+  titulo text not null,
+  descripcion text,
+  -- Porcentaje de descuento. 10 = "10% OFF". Solo para mostrar.
+  descuento_pct integer not null check (descuento_pct > 0 and descuento_pct <= 100),
+  costo_puntos integer not null check (costo_puntos > 0),
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists cupones_tienda_idx on public.cupones(tienda_id);
+
+-- Historial de canjes. Guardamos el código generado para que el usuario lo
+-- pueda recuperar desde su perfil y mostrarlo en la tienda. El código es un
+-- string corto generado por el RPC.
+create table if not exists public.canjes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  cupon_id uuid not null references public.cupones(id) on delete restrict,
+  codigo text not null unique,
+  puntos_gastados integer not null check (puntos_gastados > 0),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists canjes_user_idx on public.canjes(user_id);
 
 -- ============================================================
 -- Trigger: crear perfil en public.users al hacer signup
@@ -166,6 +255,34 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ============================================================
+-- Trigger: +10 puntos al crear un reporte
+-- ============================================================
+--
+-- Cada reporte aprobado/enviado vale 10 puntos para quien lo creó. Como el
+-- estado por defecto es 'recibido' y el cliente nunca actualiza esa columna,
+-- alcanza con sumar al insert. Si en el futuro se distingue "recibido" vs
+-- "verificado", se puede mover esta lógica a un AFTER UPDATE que dispare
+-- cuando estado pase a 'verificado'.
+create or replace function public.handle_new_reporte()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.users
+    set puntos = puntos + 10
+    where id = new.user_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_reporte_created on public.reportes;
+create trigger on_reporte_created
+  after insert on public.reportes
+  for each row execute function public.handle_new_reporte();
+
+-- ============================================================
 -- Row Level Security
 -- ============================================================
 
@@ -177,6 +294,9 @@ alter table public.reportes enable row level security;
 alter table public.donaciones enable row level security;
 alter table public.foro_posts enable row level security;
 alter table public.foro_post_animales enable row level security;
+alter table public.tiendas enable row level security;
+alter table public.cupones enable row level security;
+alter table public.canjes enable row level security;
 
 -- ---- users ----
 -- Cualquiera autenticado lee (necesario para mostrar nombre de padrino/adoptante).
@@ -297,11 +417,17 @@ drop policy if exists "foro_posts_select_all" on public.foro_posts;
 create policy "foro_posts_select_all" on public.foro_posts
   for select using (true);
 
+-- Solo la fundación dueña inserta posts tipo 'fundacion'. Los posts tipo
+-- 'publicidad' los administra el equipo del proyecto vía service_role (no
+-- hay rol "tienda" autenticado en esta versión), igual que `tiendas` y
+-- `veterinarias`. La cláusula `tipo = 'fundacion'` evita que una fundación
+-- se cuele como publicidad.
 drop policy if exists "foro_posts_insert_fundacion" on public.foro_posts;
 create policy "foro_posts_insert_fundacion" on public.foro_posts
   for insert to authenticated
   with check (
-    exists (
+    tipo = 'fundacion'
+    and exists (
       select 1 from public.organizaciones o
       where o.id = organizacion_id and o.user_id = auth.uid()
     )
@@ -360,6 +486,28 @@ create policy "foro_post_animales_write_owner" on public.foro_post_animales
       where p.id = post_id and o.user_id = auth.uid()
     )
   );
+
+-- ---- tiendas ----
+-- Catálogo público. Sin policies de escritura: solo service_role puede
+-- tocarla, consistente con el patrón de `veterinarias`.
+drop policy if exists "tiendas_select_all" on public.tiendas;
+create policy "tiendas_select_all" on public.tiendas
+  for select using (true);
+
+-- ---- cupones ----
+-- Catálogo público (cualquier usuario autenticado ve los descuentos
+-- disponibles). El equipo del proyecto crea/edita vía service_role.
+drop policy if exists "cupones_select_all" on public.cupones;
+create policy "cupones_select_all" on public.cupones
+  for select to authenticated using (true);
+
+-- ---- canjes ----
+-- Cada usuario solo ve sus propios canjes (su lista de cupones obtenidos).
+-- El insert se hace vía el RPC `canjear_cupon` (SECURITY DEFINER) que
+-- valida puntos y burla esta RLS; los clientes nunca insertan directamente.
+drop policy if exists "canjes_select_self" on public.canjes;
+create policy "canjes_select_self" on public.canjes
+  for select to authenticated using (user_id = auth.uid());
 
 -- ============================================================
 -- RPC: apadrinar / adoptar
@@ -502,6 +650,62 @@ begin
   );
 
   return v_animal_id;
+end;
+$$;
+
+-- Canjear un cupón: valida que el usuario tenga puntos suficientes, descuenta
+-- el costo de su saldo, genera un código aleatorio único y registra el canje.
+-- Devuelve un row con { codigo, puntos_restantes }. SECURITY DEFINER porque
+-- la RLS de canjes no permite insert al cliente (solo se ve el historial).
+create or replace function public.canjear_cupon(p_cupon_id uuid)
+returns table (codigo text, puntos_restantes integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+  v_costo integer;
+  v_activo boolean;
+  v_saldo integer;
+  v_codigo text;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  select costo_puntos, activo into v_costo, v_activo
+  from public.cupones where id = p_cupon_id;
+  if not found then
+    raise exception 'Cupón no existe';
+  end if;
+  if not v_activo then
+    raise exception 'Este cupón ya no está disponible';
+  end if;
+
+  -- Lock optimista del usuario para evitar carrera entre 2 canjes simultáneos.
+  select puntos into v_saldo from public.users where id = v_user_id for update;
+  if v_saldo < v_costo then
+    raise exception 'Puntos insuficientes (tienes %, necesitas %)', v_saldo, v_costo;
+  end if;
+
+  -- Código corto legible. 8 hex caracteres = 4 bytes de entropía. Como hay
+  -- unique constraint en codigo, si choca el insert falla y el cliente
+  -- reintenta — improbable para el volumen esperado.
+  -- Namespace explícito `extensions.gen_random_bytes` porque pgcrypto vive
+  -- en el schema `extensions` en Supabase (no en `public`), y el RPC tiene
+  -- search_path limitado a public.
+  v_codigo := upper(encode(extensions.gen_random_bytes(4), 'hex'));
+
+  update public.users
+    set puntos = puntos - v_costo
+    where id = v_user_id;
+
+  insert into public.canjes (user_id, cupon_id, codigo, puntos_gastados)
+  values (v_user_id, p_cupon_id, v_codigo, v_costo);
+
+  return query select v_codigo, v_saldo - v_costo;
 end;
 $$;
 
