@@ -20,6 +20,7 @@ import ReportarScreen from './src/screens/ReportarScreen';
 import DonarScreen from './src/screens/DonarScreen';
 import ForoScreen from './src/screens/ForoScreen';
 import PerfilScreen from './src/screens/PerfilScreen';
+import ConsejosScreen from './src/screens/ConsejosScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { COLORS } from './src/constants/colors';
@@ -129,7 +130,20 @@ function MainNavigator() {
             resizeMode="contain"
           />
         ),
-        headerRight: () => <HeaderMenu navigation={navigation} />,
+        headerRight: () => (
+          <View style={styles.headerRightRow}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Consejos')}
+              style={styles.headerMenuBtn}
+              hitSlop={10}
+              activeOpacity={0.7}
+              accessibilityLabel="Abrir consejos de cuidado"
+            >
+              <Ionicons name="bulb-outline" size={24} color={COLORS.white} />
+            </TouchableOpacity>
+            <HeaderMenu navigation={navigation} />
+          </View>
+        ),
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
         tabBarShowLabel: false,
@@ -184,6 +198,16 @@ function MainNavigator() {
         options={{
           title: 'Mi perfil',
           // Oculta del tabBar: la pantalla se alcanza desde el menú del header.
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
+        }}
+      />
+      <Tab.Screen
+        name="Consejos"
+        component={ConsejosScreen}
+        options={{
+          title: 'Consejos de cuidado',
+          // Oculta del tabBar: se alcanza desde el ícono de bombilla en el header.
           tabBarButton: () => null,
           tabBarItemStyle: { display: 'none' },
         }}
@@ -273,8 +297,12 @@ const styles = StyleSheet.create({
   centerButtonFocused: { backgroundColor: COLORS.accent },
 
   // Menú del header (Mi perfil / Cerrar sesión)
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerMenuBtn: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     justifyContent: 'center',
     alignItems: 'center',
